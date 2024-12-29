@@ -1,0 +1,39 @@
+name: Check Tokens Validity
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-tokens:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install requests
+
+      - name: Run check_tokens_validity.py
+        run: |
+          echo "===== Launch check_tokens_validity ====="
+          python check_tokens_validity.py
+          echo "===== End check_tokens_validity ====="
+
+      - name: Show log
+        if: always()
+        run: |
+          echo "===== check_tokens_validity.log ====="
+          cat check_tokens_validity.log || echo "No log found."
+
+      - name: Show CSV
+        run: |
+          echo "===== result_tokens.csv ====="
+          cat result_tokens.csv || echo "No CSV found."
