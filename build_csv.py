@@ -32,19 +32,19 @@ logging.basicConfig(
 logging.info("=== START build_csv ===")
 
 #####################################
-# LISTE 102 TOKENS (CMCID MIS À JOUR)
+# LISTE 102 TOKENS
 #####################################
 TOKENS = [
     {
         "symbol": "SOLVEX",
-        "cmc_id": 28301,
+        "cmc_id": 9604,  # Corrigé
         "chain": "eth",
         "contract": "0x2d7a47908d817dd359b9595c19f6d9e1c994472a",
         "lunar_symbol": "SOLVEX"
     },
     {
         "symbol": "PATRIOT",
-        "cmc_id": 27669,
+        "cmc_id": 2988,  # Corrigé
         "chain": "bsc",
         "contract": "0x6d48b2d0de4d2e6c5f0a3b0b2824b99b42ed56d1",
         "lunar_symbol": "PATRIOT"
@@ -297,8 +297,8 @@ TOKENS = [
     {
         "symbol": "TOMI",
         "cmc_id": 16834,
-        "chain": "eth",
-        "contract": "0x2b8a564379e7f8ee988e0e4a3aa4b5f1aee6a578",
+        "chain": None,
+        "contract": None,
         "lunar_symbol": "TOMI"
     },
     {
@@ -318,8 +318,8 @@ TOKENS = [
     {
         "symbol": "AXOL",
         "cmc_id": 28547,
-        "chain": "arbitrum",
-        "contract": "0x3e6648c5a70a150a88bce65f4ad4d506fe15d2af",
+        "chain": None,
+        "contract": None,
         "lunar_symbol": "AXOL"
     },
     {
@@ -338,7 +338,7 @@ TOKENS = [
     },
     {
         "symbol": "UTK",
-        "cmc_id": 2320,
+        "cmc_id": 28816,
         "chain": "eth",
         "contract": "0xdc9ac3c20d1ed0b540df9b1fedc10039df13f99c",
         "lunar_symbol": "UTK"
@@ -353,8 +353,8 @@ TOKENS = [
     {
         "symbol": "CELL",
         "cmc_id": 8993,
-        "chain": "eth",
-        "contract": "0x26c8afbbfe1ebaca03c2bb082e69d0476bffe099",
+        "chain": None,
+        "contract": None,
         "lunar_symbol": "CELL"
     },
     {
@@ -380,9 +380,9 @@ TOKENS = [
     },
     {
         "symbol": "ORDER",
-        "cmc_id": 28874,
-        "chain": "eth",
-        "contract": "0x20393be0d2643ed542394E31eF0909cF1437B6ef",
+        "cmc_id": 27682,
+        "chain": None,
+        "contract": None,
         "lunar_symbol": "ORDER"
     },
     {
@@ -402,15 +402,15 @@ TOKENS = [
     {
         "symbol": "SYNT",
         "cmc_id": 28453,
-        "chain": None,
-        "contract": None,
+        "chain": "eth",
+        "contract": "0x11a068Ea42F9454E591C94eB0f2Ea0c5bC7aAfd7",
         "lunar_symbol": "SYNT"
     },
     {
         "symbol": "ZKJ",
         "cmc_id": 28237,
-        "chain": "eth",
-        "contract": "0x8ECa806Aecc86CE90Da803b080Ca4E3A9b8097ad",
+        "chain": None,
+        "contract": None,
         "lunar_symbol": "ZKJ"
     },
     {
@@ -506,7 +506,7 @@ TOKENS = [
     },
     {
         "symbol": "DAG",
-        "cmc_id": 2868,
+        "cmc_id": 3843,
         "chain": None,
         "contract": None,
         "lunar_symbol": "DAG"
@@ -520,16 +520,16 @@ TOKENS = [
     },
     {
         "symbol": "PYR",
-        "cmc_id": 8707,
+        "cmc_id": 8750,
         "chain": "eth",
-        "contract": "0x430ef9263e76daae63c84292c3409d61c598e9682",
+        "contract": "0x430EF9263E76DAE63c84292C3409D61c598E9682",
         "lunar_symbol": "PYR"
     },
     {
         "symbol": "ILV",
-        "cmc_id": 8719,
+        "cmc_id": 9399,
         "chain": "eth",
-        "contract": "0x5e6b6d9abad9093fdc861ea1600eba1b355cd940",
+        "contract": "0x767FE9EDC9E0dF98E07454847909b5E959D7ca0E",
         "lunar_symbol": "ILV"
     },
     {
@@ -574,180 +574,188 @@ TOKENS = [
         "contract": "0xAC51066d7bEC65Dc4589368da368b212745d63E8",
         "lunar_symbol": "ALICE"
     },
+
+    # On ajoute ici les 78→102
     {
-        "symbol": "DAR",
-        "cmc_id": 11055,
-        "chain": "eth",
-        "contract": "0x081131434f93063751813c619ecca9c4dc7862a3",
-        "lunar_symbol": "DAR"
-    },
-    {
-        "symbol": "TLM",
-        "cmc_id": 9119,
-        "chain": "eth",
-        "contract": "0x888888888888f195e27a2e0f98d712952ab9348e",
-        "lunar_symbol": "TLM"
-    },
-    {
-        "symbol": "YGG",
-        "cmc_id": 10688,
-        "chain": "eth",
-        "contract": "0x25f8087ead173b73d6e8b84329989a8eea16cf73",
-        "lunar_symbol": "YGG"
-    },
-    {
-        "symbol": "SWEAT",
-        "cmc_id": 15710,
+        "symbol": "APT",
+        "cmc_id": 21794,
         "chain": None,
         "contract": None,
-        "lunar_symbol": "SWEAT"
+        "lunar_symbol": "APT"
     },
     {
-        "symbol": "GMT",
-        "cmc_id": 18069,
+        "symbol": "OP",
+        "cmc_id": 11840,
         "chain": None,
         "contract": None,
-        "lunar_symbol": "GMT"
+        "lunar_symbol": "OP"
     },
     {
-        "symbol": "FITFI",
-        "cmc_id": 18876,
+        "symbol": "ARB",
+        "cmc_id": 11841,
         "chain": None,
         "contract": None,
-        "lunar_symbol": "FITFI"
+        "lunar_symbol": "ARB"
     },
     {
-        "symbol": "GST",
-        "cmc_id": 21861,
+        "symbol": "FTM",
+        "cmc_id": 3513,
         "chain": None,
         "contract": None,
-        "lunar_symbol": "GST"
+        "lunar_symbol": "FTM"
     },
     {
-        "symbol": "RACA",
-        "cmc_id": 11396,
-        "chain": "bsc",
-        "contract": "0x12bb890508c125661e03b09ec06e404bc9289040",
-        "lunar_symbol": "RACA"
-    },
-    {
-        "symbol": "SPS",
-        "cmc_id": 11101,
+        "symbol": "NEAR",
+        "cmc_id": 6535,
         "chain": None,
         "contract": None,
-        "lunar_symbol": "SPS"
+        "lunar_symbol": "NEAR"
     },
     {
-        "symbol": "THG",
-        "cmc_id": 11995,
-        "chain": "bsc",
-        "contract": "0x24802247bd157d771b7effa205237d8e9269ba8a",
-        "lunar_symbol": "THG"
-    },
-    {
-        "symbol": "TOWER",
-        "cmc_id": 8666,
-        "chain": "eth",
-        "contract": "0x1c9922314ed1415c95b9fd453c3818fd41867d0b",
-        "lunar_symbol": "TOWER"
-    },
-    {
-        "symbol": "UFO",
-        "cmc_id": 11854,
-        "chain": "eth",
-        "contract": "0x249848be0ca86be718aa5e8a5c7f80d4c5a5579e",
-        "lunar_symbol": "UFO"
-    },
-    {
-        "symbol": "VRA",
-        "cmc_id": 3816,
-        "chain": "eth",
-        "contract": "0xf411903cbc70a74d22900a5de66a2dda66507255",
-        "lunar_symbol": "VRA"
-    },
-    {
-        "symbol": "WAXP",
-        "cmc_id": 2300,
+        "symbol": "AAVE",
+        "cmc_id": 7278,
         "chain": None,
         "contract": None,
-        "lunar_symbol": "WAXP"
+        "lunar_symbol": "AAVE"
     },
     {
-        "symbol": "XCAD",
-        "cmc_id": 9383,
-        "chain": "eth",
-        "contract": "0x7659ce147d0e714454073a5dd7003544234b6aa0",
-        "lunar_symbol": "XCAD"
+        "symbol": "XTZ",
+        "cmc_id": 2011,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "XTZ"
+    },
+    {
+        "symbol": "THETA",
+        "cmc_id": 2416,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "THETA"
+    },
+    {
+        "symbol": "FLOW",
+        "cmc_id": 4558,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "FLOW"
+    },
+    {
+        "symbol": "EGLD",  # MultiversX
+        "cmc_id": 6892,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "EGLD"
+    },
+    {
+        "symbol": "ICP",
+        "cmc_id": 8916,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "ICP"
+    },
+    {
+        "symbol": "VET",
+        "cmc_id": 3077,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "VET"
+    },
+    {
+        "symbol": "HBAR",
+        "cmc_id": 4642,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "HBAR"
+    },
+    {
+        "symbol": "ALGO",
+        "cmc_id": 4030,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "ALGO"
+    },
+    {
+        "symbol": "STX",
+        "cmc_id": 4847,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "STX"
+    },
+    {
+        "symbol": "EOS",
+        "cmc_id": 1765,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "EOS"
+    },
+    {
+        "symbol": "KAVA",
+        "cmc_id": 4846,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "KAVA"
+    },
+    {
+        "symbol": "ZIL",
+        "cmc_id": 2469,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "ZIL"
+    },
+    {
+        "symbol": "1INCH",
+        "cmc_id": 8104,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "1INCH"
+    },
+    {
+        "symbol": "GNO",
+        "cmc_id": 1659,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "GNO"
     },
     {
         "symbol": "LRC",
         "cmc_id": 1934,
-        "chain": "eth",
-        "contract": "0xbbbbca6a901c926f240b89eacb641d8aec7aeafd",
+        "chain": None,
+        "contract": None,
         "lunar_symbol": "LRC"
     },
     {
-        "symbol": "SKL",
-        "cmc_id": 5691,
-        "chain": "eth",
-        "contract": "0x00c83aecc790e8a4453e5dd3b0b4b3680501a7a7",
-        "lunar_symbol": "SKL"
+        "symbol": "SUSHI",
+        "cmc_id": 6758,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "SUSHI"
     },
     {
-        "symbol": "RLB",
-        "cmc_id": 24064,
-        "chain": "eth",
-        "contract": "0x872dD1595544CE22ad1e0174449C7ECE6F0bb01b",
-        "lunar_symbol": "RLB"
+        "symbol": "BAL",
+        "cmc_id": 6538,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "BAL"
     },
     {
-        "symbol": "METIS",
-        "cmc_id": 9640,
-        "chain": "eth",
-        "contract": "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
-        "lunar_symbol": "METIS"
+        "symbol": "YFI",
+        "cmc_id": 5864,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "YFI"
     },
     {
-        "symbol": "T",
-        "cmc_id": 9476,
-        "chain": "eth",
-        "contract": "0xDc8AF07A7861Bedd104b8093ae3e9376fc8596d2",
-        "lunar_symbol": "T"
-    },
-    {
-        "symbol": "BICO",
-        "cmc_id": 11222,
-        "chain": "eth",
-        "contract": "0xf17e65822b568b3903685a7c9f496cf7656cc6c2",
-        "lunar_symbol": "BICO"
-    },
-    {
-        "symbol": "SSV",
-        "cmc_id": 18902,
-        "chain": "eth",
-        "contract": "0x9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f",
-        "lunar_symbol": "SSV"
-    },
-    {
-        "symbol": "XYO",  # doublon (#22) => je recopie tel quel
-        "cmc_id": 2765,
-        "chain": "eth",
-        "contract": "0x55296f69f40ea6d20e478533c15a6b08b654e758",
-        "lunar_symbol": "XYO"
-    },
-    {
-        "symbol": "UMA",
-        "cmc_id": 5617,
-        "chain": "eth",
-        "contract": "0x04fa0d235c4abf4bcf4787af4cf447de572ef828",
-        "lunar_symbol": "UMA"
+        "symbol": "SRM",
+        "cmc_id": 6187,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "SRM"
     }
 ]
 
 #####################################
 # FONCTIONS
 #####################################
-
 def fetch_cmc_history(cmc_id, days=30):
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=days)
@@ -776,7 +784,7 @@ def fetch_cmc_history(cmc_id, days=30):
         for q in quotes:
             t = q["timestamp"]
             dd = datetime.fromisoformat(t.replace("Z",""))
-            usd = q["quote"].get("USD", {})
+            usd = q["quote"].get("USD",{})
             o = usd.get("open", None)
             h = usd.get("high", None)
             lo = usd.get("low", None)
@@ -785,11 +793,8 @@ def fetch_cmc_history(cmc_id, days=30):
             mc = usd.get("market_cap", None)
             if (o is None) or (h is None) or (lo is None) or (c is None):
                 continue
-            rows.append([dd, o, h, lo, c, vol, mc])
-        df = pd.DataFrame(
-            rows,
-            columns=["date", "open", "high", "low", "close", "volume", "market_cap"]
-        )
+            rows.append([dd,o,h,lo,c,vol,mc])
+        df = pd.DataFrame(rows, columns=["date","open","high","low","close","volume","market_cap"])
         df.sort_values("date", inplace=True)
         df.reset_index(drop=True, inplace=True)
         return df
@@ -800,9 +805,8 @@ def fetch_cmc_history(cmc_id, days=30):
 def fetch_nansen_holders(chain, contract):
     if not chain or not contract:
         return 0
-    key = NANSEN_API_KEY
     url = f"https://api.nansen.ai/tokens/{chain}/{contract}/holders"
-    headers = {"X-API-KEY": key}
+    headers = {"X-API-KEY": NANSEN_API_KEY}
     try:
         r = requests.get(url, headers=headers)
         j = r.json()
@@ -815,9 +819,8 @@ def fetch_nansen_holders(chain, contract):
 def fetch_lunar_sentiment(symbol):
     if not symbol:
         return 0.5
-    key = LUNAR_API_KEY
     url = f"https://lunarcrush.com/api2?symbol={symbol}&data=market"
-    headers = {"Authorization": f"Bearer {key}"}
+    headers = {"Authorization": f"Bearer {LUNAR_API_KEY}"}
     try:
         r = requests.get(url, headers=headers)
         j = r.json()
@@ -825,10 +828,10 @@ def fetch_lunar_sentiment(symbol):
             return 0.5
         dd = j["data"][0]
         sc = dd.get("social_score", 50)
-        maxi = max(sc, 100)
+        maxi = max(sc,100)
         val = sc/maxi
-        if val > 1:
-            val = 1
+        if val>1:
+            val=1
         return val
     except:
         return 0.5
@@ -847,18 +850,18 @@ def build_token_df(token):
 
     df_cmc["token"] = sym
 
-    holders_val = fetch_nansen_holders(chain, contract)
-    senti_val = fetch_lunar_sentiment(lunar)
+    h = fetch_nansen_holders(chain, contract)
+    s = fetch_lunar_sentiment(lunar)
 
-    df_cmc["holders"] = holders_val
-    df_cmc["sentiment_score"] = senti_val
+    df_cmc["holders"] = h
+    df_cmc["sentiment_score"] = s
     return df_cmc
 
 def compute_label(df):
     df = df.sort_values("date").reset_index(drop=True)
     df["price_future"] = df["close"].shift(-SHIFT_DAYS)
     df["variation_2d"] = (df["price_future"] - df["close"]) / df["close"]
-    df["label"] = (df["variation_2d"] >= THRESHOLD).astype(int)
+    df["label"] = (df["variation_2d"]>=THRESHOLD).astype(int)
     return df
 
 def main():
@@ -877,19 +880,17 @@ def main():
     if not all_dfs:
         logging.warning("No data => no CSV.")
         return
-
     df_all = pd.concat(all_dfs, ignore_index=True)
     df_all = df_all.sort_values(["token","date"]).reset_index(drop=True)
 
     df_all.dropna(subset=["label"], inplace=True)
 
     final = df_all[["token","date","close","volume","market_cap","holders","sentiment_score","label"]].copy()
-    final.rename(columns={"close": "price"}, inplace=True)
+    final.rename(columns={"close":"price"}, inplace=True)
 
     final.to_csv(OUTPUT_CSV, index=False)
-    nb = len(final)
-    print(f"Export => {OUTPUT_CSV} ({nb} lignes)")
-    logging.info(f"Export => {OUTPUT_CSV} => {nb} lignes")
+    print(f"Export => {OUTPUT_CSV} ({len(final)} lignes)")
+    logging.info(f"Export => {OUTPUT_CSV} => {len(final)} lignes")
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
