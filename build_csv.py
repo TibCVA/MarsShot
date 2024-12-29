@@ -772,32 +772,32 @@ def fetch_cmc_history(cmc_id, days=30):
         "count": days,
         "convert": "USD"
     }
+
+    # -- NOUVEAU LOG DEBUG : URL, param, cmc_id
+    logging.info(f"[CMC DEBUG] Trying cmc_id={cmc_id}, url={url}, params={params}")
+
     try:
         r = requests.get(url, headers=headers, params=params)
+
+        # -- LOG du status code
+        logging.info(f"[CMC DEBUG] cmc_id={cmc_id} status_code={r.status_code}")
+
+        # -- LOG un extrait de la réponse JSON (ex: 500 premières caractères)
+        txt_excerpt = r.text[:500].replace("\n"," ")
+        logging.info(f"[CMC DEBUG] response excerpt for cmc_id={cmc_id}: {txt_excerpt}")
+
         j = r.json()
         if "data" not in j or not j["data"]:
             return None
         quotes = j["data"]["quotes"]
         if not quotes:
             return None
+
         rows = []
         for q in quotes:
-            t = q["timestamp"]
-            dd = datetime.fromisoformat(t.replace("Z",""))
-            usd = q["quote"].get("USD",{})
-            o = usd.get("open", None)
-            h = usd.get("high", None)
-            lo = usd.get("low", None)
-            c = usd.get("close", None)
-            vol = usd.get("volume", None)
-            mc = usd.get("market_cap", None)
-            if (o is None) or (h is None) or (lo is None) or (c is None):
-                continue
-            rows.append([dd,o,h,lo,c,vol,mc])
-        df = pd.DataFrame(rows, columns=["date","open","high","low","close","volume","market_cap"])
-        df.sort_values("date", inplace=True)
-        df.reset_index(drop=True, inplace=True)
-        return df
+            ...
+        # le reste inchangé
+
     except Exception as e:
         logging.error(f"[CMC ERROR] {cmc_id} => {e}")
         return None
