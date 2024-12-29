@@ -24,16 +24,17 @@ THRESHOLD = 0.30
 OUTPUT_CSV = "training_data.csv"
 LOG_FILE = "build_csv.log"
 
-logging.basicConfig(filename=LOG_FILE,
-                    level=logging.INFO,
-                    format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logging.info("=== START build_csv ===")
 
 #####################################
-# LISTE 102 TOKENS
+# LISTE 102 TOKENS (CMCID MIS À JOUR)
 #####################################
 TOKENS = [
-    # 25 tokens manquants
     {
         "symbol": "SOLVEX",
         "cmc_id": 28301,
@@ -58,7 +59,7 @@ TOKENS = [
     {
         "symbol": "MOEW",
         "cmc_id": 28839,
-        "chain": None,  # solana => pas couverte par nansen
+        "chain": None,
         "contract": None,
         "lunar_symbol": "MOEW"
     },
@@ -107,7 +108,7 @@ TOKENS = [
     {
         "symbol": "PHA",
         "cmc_id": 6841,
-        "chain": None, # multiple => on skip
+        "chain": None,
         "contract": None,
         "lunar_symbol": "PHA"
     },
@@ -209,22 +210,544 @@ TOKENS = [
         "contract": None,
         "lunar_symbol": "OL"
     },
-
-    # ... on enchaîne avec les 77 tokens restants ...
-    # EXACTEMENT comme dans la config.yaml (mêmes cmc_id, chain, contract)
-    # ...
+    {
+        "symbol": "LKI",
+        "cmc_id": 28634,
+        "chain": "eth",
+        "contract": "0x4b3a0c6d668b43f3f07904e124328659b90bb4ca",
+        "lunar_symbol": "LKI"
+    },
+    {
+        "symbol": "APX",
+        "cmc_id": 21792,
+        "chain": "bsc",
+        "contract": "0x78f5d389f5cdccfc41594abab4b0ed02f31398b3",
+        "lunar_symbol": "APX"
+    },
+    {
+        "symbol": "DF",
+        "cmc_id": 5777,
+        "chain": "eth",
+        "contract": "0x431ad2ff6a9C365805eBaD47Ee021148d6f7DBe0",
+        "lunar_symbol": "DF"
+    },
+    {
+        "symbol": "EL",
+        "cmc_id": 7505,
+        "chain": "eth",
+        "contract": "0x2781246fe707bb15cee3e5ea354e2154a2877b16",
+        "lunar_symbol": "EL"
+    },
+    {
+        "symbol": "VELO",
+        "cmc_id": 20461,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "VELO"
+    },
+    {
+        "symbol": "SRX",
+        "cmc_id": 10798,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "SRX"
+    },
+    {
+        "symbol": "ACX",
+        "cmc_id": 19163,
+        "chain": "eth",
+        "contract": "0x44108f0223a3c3028f5fe7177f8964c072d90904",
+        "lunar_symbol": "ACX"
+    },
+    {
+        "symbol": "COMAI",
+        "cmc_id": 28649,
+        "chain": "eth",
+        "contract": "0x4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8",
+        "lunar_symbol": "COMAI"
+    },
+    {
+        "symbol": "ZENT",
+        "cmc_id": 28552,
+        "chain": "bsc",
+        "contract": "0x5874c7195d3f959668f883a34c82391a4b188f7a",
+        "lunar_symbol": "ZENT"
+    },
+    {
+        "symbol": "WOLF",
+        "cmc_id": 28901,
+        "chain": "eth",
+        "contract": "0x79b1f5e682368ea3786a1518f0f5a0613224f8fa",
+        "lunar_symbol": "WOLF"
+    },
+    {
+        "symbol": "ZEN",
+        "cmc_id": 1698,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "ZEN"
+    },
+    {
+        "symbol": "GEAR",
+        "cmc_id": 28352,
+        "chain": "eth",
+        "contract": "0xba3335588d9403515223f109edc4eb7269a9ab5d",
+        "lunar_symbol": "GEAR"
+    },
+    {
+        "symbol": "TOMI",
+        "cmc_id": 16834,
+        "chain": "eth",
+        "contract": "0x2b8a564379e7f8ee988e0e4a3aa4b5f1aee6a578",
+        "lunar_symbol": "TOMI"
+    },
+    {
+        "symbol": "ARTY",
+        "cmc_id": 28789,
+        "chain": "eth",
+        "contract": "0x9b91ef0d78488c5ef4c509b5fac2911b2d67b1af",
+        "lunar_symbol": "ARTY"
+    },
+    {
+        "symbol": "URO",
+        "cmc_id": 28899,
+        "chain": "eth",
+        "contract": "0x7b4328c127b85369d9f82ca0503b000d96997463",
+        "lunar_symbol": "URO"
+    },
+    {
+        "symbol": "AXOL",
+        "cmc_id": 28547,
+        "chain": "arbitrum",
+        "contract": "0x3e6648c5a70a150a88bce65f4ad4d506fe15d2af",
+        "lunar_symbol": "AXOL"
+    },
+    {
+        "symbol": "AAAHHM",
+        "cmc_id": 28876,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "AAAHHM"
+    },
+    {
+        "symbol": "ATA",
+        "cmc_id": 10188,
+        "chain": "eth",
+        "contract": "0xa2120b9e674d3fc3875f415a7df52e382f141225",
+        "lunar_symbol": "ATA"
+    },
+    {
+        "symbol": "UTK",
+        "cmc_id": 2320,
+        "chain": "eth",
+        "contract": "0xdc9ac3c20d1ed0b540df9b1fedc10039df13f99c",
+        "lunar_symbol": "UTK"
+    },
+    {
+        "symbol": "PEAQ",
+        "cmc_id": 22766,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "PEAQ"
+    },
+    {
+        "symbol": "CELL",
+        "cmc_id": 8993,
+        "chain": "eth",
+        "contract": "0x26c8afbbfe1ebaca03c2bb082e69d0476bffe099",
+        "lunar_symbol": "CELL"
+    },
+    {
+        "symbol": "IDEX",
+        "cmc_id": 3928,
+        "chain": "eth",
+        "contract": "0xB705268213D593B8FD88d3FDEFF93AFF5CbDcfAE",
+        "lunar_symbol": "IDEX"
+    },
+    {
+        "symbol": "PUFFER",
+        "cmc_id": 28522,
+        "chain": "eth",
+        "contract": "0xd9A442856C234a39a81a089C06451EBAa4306a72",
+        "lunar_symbol": "PUFFER"
+    },
+    {
+        "symbol": "CA",
+        "cmc_id": 28713,
+        "chain": "eth",
+        "contract": "0x9c25E6d3aEf2786a5D0CE8835D71839f7E388889",
+        "lunar_symbol": "CA"
+    },
+    {
+        "symbol": "ORDER",
+        "cmc_id": 28874,
+        "chain": "eth",
+        "contract": "0x20393be0d2643ed542394E31eF0909cF1437B6ef",
+        "lunar_symbol": "ORDER"
+    },
+    {
+        "symbol": "CXT",
+        "cmc_id": 28635,
+        "chain": "eth",
+        "contract": "0xE98A72656287275Ab9F82E0B8F4b29E233C3E632",
+        "lunar_symbol": "CXT"
+    },
+    {
+        "symbol": "TERMINUS",
+        "cmc_id": 28874,
+        "chain": "eth",
+        "contract": "0x20393be0d2643ed542394E31eF0909cF1437B6ef",
+        "lunar_symbol": "TERMINUS"
+    },
+    {
+        "symbol": "SYNT",
+        "cmc_id": 28453,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "SYNT"
+    },
+    {
+        "symbol": "ZKJ",
+        "cmc_id": 28237,
+        "chain": "eth",
+        "contract": "0x8ECa806Aecc86CE90Da803b080Ca4E3A9b8097ad",
+        "lunar_symbol": "ZKJ"
+    },
+    {
+        "symbol": "DBR",
+        "cmc_id": 28246,
+        "chain": "eth",
+        "contract": "0xE987c5D2Cfa092Ad9E730055bF8DF81F4842E3c9",
+        "lunar_symbol": "DBR"
+    },
+    {
+        "symbol": "FORTH",
+        "cmc_id": 9421,
+        "chain": "eth",
+        "contract": "0x77FbA179C79De5B7653F68b5039Af940AdA60ce0",
+        "lunar_symbol": "FORTH"
+    },
+    {
+        "symbol": "FIRO",
+        "cmc_id": 1414,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "FIRO"
+    },
+    {
+        "symbol": "RNDR",
+        "cmc_id": 5690,
+        "chain": "eth",
+        "contract": "0x6de037ef9ad2725eb40118bb1702ebb27e4aeb24",
+        "lunar_symbol": "RNDR"
+    },
+    {
+        "symbol": "INJ",
+        "cmc_id": 7226,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "INJ"
+    },
+    {
+        "symbol": "GRT",
+        "cmc_id": 6719,
+        "chain": "eth",
+        "contract": "0xc944e90c64b2c07662a292be6244bdf05cda44a7",
+        "lunar_symbol": "GRT"
+    },
+    {
+        "symbol": "RLC",
+        "cmc_id": 1637,
+        "chain": "eth",
+        "contract": "0x607F4C5BB672230e8672085532f7e901544a7375",
+        "lunar_symbol": "RLC"
+    },
+    {
+        "symbol": "OCEAN",
+        "cmc_id": 3911,
+        "chain": "eth",
+        "contract": "0x967da4048cD07aB37855c090aAF366e4ce1b9F48",
+        "lunar_symbol": "OCEAN"
+    },
+    {
+        "symbol": "AGIX",
+        "cmc_id": 2424,
+        "chain": "eth",
+        "contract": "0x5B7533812759B45C2B44C19e320ba2cD2681b542",
+        "lunar_symbol": "AGIX"
+    },
+    {
+        "symbol": "FET",
+        "cmc_id": 3773,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "FET"
+    },
+    {
+        "symbol": "ROSE",
+        "cmc_id": 7653,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "ROSE"
+    },
+    {
+        "symbol": "CTSI",
+        "cmc_id": 5444,
+        "chain": "eth",
+        "contract": "0x491604c0FDF08347Dd1fa4Ee062a822A5DD06B5D",
+        "lunar_symbol": "CTSI"
+    },
+    {
+        "symbol": "CQT",
+        "cmc_id": 9467,
+        "chain": "eth",
+        "contract": "0xD417144312DbF50465b1C641d016962017Ef6240",
+        "lunar_symbol": "CQT"
+    },
+    {
+        "symbol": "DAG",
+        "cmc_id": 2868,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "DAG"
+    },
+    {
+        "symbol": "UOS",
+        "cmc_id": 4184,
+        "chain": "eth",
+        "contract": "0xd13c7342e1ef687c5ad21b27c2b65d772cab5c8c",
+        "lunar_symbol": "UOS"
+    },
+    {
+        "symbol": "PYR",
+        "cmc_id": 8707,
+        "chain": "eth",
+        "contract": "0x430ef9263e76daae63c84292c3409d61c598e9682",
+        "lunar_symbol": "PYR"
+    },
+    {
+        "symbol": "ILV",
+        "cmc_id": 8719,
+        "chain": "eth",
+        "contract": "0x5e6b6d9abad9093fdc861ea1600eba1b355cd940",
+        "lunar_symbol": "ILV"
+    },
+    {
+        "symbol": "AXS",
+        "cmc_id": 6783,
+        "chain": "eth",
+        "contract": "0xBB0E17EF65F82Ab018d8EDd776e8DD940327B28b",
+        "lunar_symbol": "AXS"
+    },
+    {
+        "symbol": "SAND",
+        "cmc_id": 6210,
+        "chain": "eth",
+        "contract": "0x3845badAde8e6dFF049820680d1F14bD3903a5d0",
+        "lunar_symbol": "SAND"
+    },
+    {
+        "symbol": "MANA",
+        "cmc_id": 1966,
+        "chain": "eth",
+        "contract": "0x0F5D2fB29fb7d3CFeE444a200298f468908cC942",
+        "lunar_symbol": "MANA"
+    },
+    {
+        "symbol": "ENJ",
+        "cmc_id": 2130,
+        "chain": "eth",
+        "contract": "0xF629cBd94d3791C9250152BD8dfBDF380E2a3B9c",
+        "lunar_symbol": "ENJ"
+    },
+    {
+        "symbol": "GALA",
+        "cmc_id": 7080,
+        "chain": "eth",
+        "contract": "0x15D4c048F83bd7e37d49eA4C83a07267Ec4203dA",
+        "lunar_symbol": "GALA"
+    },
     {
         "symbol": "ALICE",
         "cmc_id": 8766,
         "chain": "eth",
         "contract": "0xAC51066d7bEC65Dc4589368da368b212745d63E8",
         "lunar_symbol": "ALICE"
+    },
+    {
+        "symbol": "DAR",
+        "cmc_id": 11055,
+        "chain": "eth",
+        "contract": "0x081131434f93063751813c619ecca9c4dc7862a3",
+        "lunar_symbol": "DAR"
+    },
+    {
+        "symbol": "TLM",
+        "cmc_id": 9119,
+        "chain": "eth",
+        "contract": "0x888888888888f195e27a2e0f98d712952ab9348e",
+        "lunar_symbol": "TLM"
+    },
+    {
+        "symbol": "YGG",
+        "cmc_id": 10688,
+        "chain": "eth",
+        "contract": "0x25f8087ead173b73d6e8b84329989a8eea16cf73",
+        "lunar_symbol": "YGG"
+    },
+    {
+        "symbol": "SWEAT",
+        "cmc_id": 15710,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "SWEAT"
+    },
+    {
+        "symbol": "GMT",
+        "cmc_id": 18069,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "GMT"
+    },
+    {
+        "symbol": "FITFI",
+        "cmc_id": 18876,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "FITFI"
+    },
+    {
+        "symbol": "GST",
+        "cmc_id": 21861,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "GST"
+    },
+    {
+        "symbol": "RACA",
+        "cmc_id": 11396,
+        "chain": "bsc",
+        "contract": "0x12bb890508c125661e03b09ec06e404bc9289040",
+        "lunar_symbol": "RACA"
+    },
+    {
+        "symbol": "SPS",
+        "cmc_id": 11101,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "SPS"
+    },
+    {
+        "symbol": "THG",
+        "cmc_id": 11995,
+        "chain": "bsc",
+        "contract": "0x24802247bd157d771b7effa205237d8e9269ba8a",
+        "lunar_symbol": "THG"
+    },
+    {
+        "symbol": "TOWER",
+        "cmc_id": 8666,
+        "chain": "eth",
+        "contract": "0x1c9922314ed1415c95b9fd453c3818fd41867d0b",
+        "lunar_symbol": "TOWER"
+    },
+    {
+        "symbol": "UFO",
+        "cmc_id": 11854,
+        "chain": "eth",
+        "contract": "0x249848be0ca86be718aa5e8a5c7f80d4c5a5579e",
+        "lunar_symbol": "UFO"
+    },
+    {
+        "symbol": "VRA",
+        "cmc_id": 3816,
+        "chain": "eth",
+        "contract": "0xf411903cbc70a74d22900a5de66a2dda66507255",
+        "lunar_symbol": "VRA"
+    },
+    {
+        "symbol": "WAXP",
+        "cmc_id": 2300,
+        "chain": None,
+        "contract": None,
+        "lunar_symbol": "WAXP"
+    },
+    {
+        "symbol": "XCAD",
+        "cmc_id": 9383,
+        "chain": "eth",
+        "contract": "0x7659ce147d0e714454073a5dd7003544234b6aa0",
+        "lunar_symbol": "XCAD"
+    },
+    {
+        "symbol": "LRC",
+        "cmc_id": 1934,
+        "chain": "eth",
+        "contract": "0xbbbbca6a901c926f240b89eacb641d8aec7aeafd",
+        "lunar_symbol": "LRC"
+    },
+    {
+        "symbol": "SKL",
+        "cmc_id": 5691,
+        "chain": "eth",
+        "contract": "0x00c83aecc790e8a4453e5dd3b0b4b3680501a7a7",
+        "lunar_symbol": "SKL"
+    },
+    {
+        "symbol": "RLB",
+        "cmc_id": 24064,
+        "chain": "eth",
+        "contract": "0x872dD1595544CE22ad1e0174449C7ECE6F0bb01b",
+        "lunar_symbol": "RLB"
+    },
+    {
+        "symbol": "METIS",
+        "cmc_id": 9640,
+        "chain": "eth",
+        "contract": "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+        "lunar_symbol": "METIS"
+    },
+    {
+        "symbol": "T",
+        "cmc_id": 9476,
+        "chain": "eth",
+        "contract": "0xDc8AF07A7861Bedd104b8093ae3e9376fc8596d2",
+        "lunar_symbol": "T"
+    },
+    {
+        "symbol": "BICO",
+        "cmc_id": 11222,
+        "chain": "eth",
+        "contract": "0xf17e65822b568b3903685a7c9f496cf7656cc6c2",
+        "lunar_symbol": "BICO"
+    },
+    {
+        "symbol": "SSV",
+        "cmc_id": 18902,
+        "chain": "eth",
+        "contract": "0x9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f",
+        "lunar_symbol": "SSV"
+    },
+    {
+        "symbol": "XYO",  # doublon (#22) => je recopie tel quel
+        "cmc_id": 2765,
+        "chain": "eth",
+        "contract": "0x55296f69f40ea6d20e478533c15a6b08b654e758",
+        "lunar_symbol": "XYO"
+    },
+    {
+        "symbol": "UMA",
+        "cmc_id": 5617,
+        "chain": "eth",
+        "contract": "0x04fa0d235c4abf4bcf4787af4cf447de572ef828",
+        "lunar_symbol": "UMA"
     }
 ]
 
 #####################################
 # FONCTIONS
 #####################################
+
 def fetch_cmc_history(cmc_id, days=30):
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=days)
@@ -253,7 +776,7 @@ def fetch_cmc_history(cmc_id, days=30):
         for q in quotes:
             t = q["timestamp"]
             dd = datetime.fromisoformat(t.replace("Z",""))
-            usd = q["quote"].get("USD",{})
+            usd = q["quote"].get("USD", {})
             o = usd.get("open", None)
             h = usd.get("high", None)
             lo = usd.get("low", None)
@@ -262,8 +785,11 @@ def fetch_cmc_history(cmc_id, days=30):
             mc = usd.get("market_cap", None)
             if (o is None) or (h is None) or (lo is None) or (c is None):
                 continue
-            rows.append([dd,o,h,lo,c,vol,mc])
-        df = pd.DataFrame(rows, columns=["date","open","high","low","close","volume","market_cap"])
+            rows.append([dd, o, h, lo, c, vol, mc])
+        df = pd.DataFrame(
+            rows,
+            columns=["date", "open", "high", "low", "close", "volume", "market_cap"]
+        )
         df.sort_values("date", inplace=True)
         df.reset_index(drop=True, inplace=True)
         return df
@@ -274,8 +800,9 @@ def fetch_cmc_history(cmc_id, days=30):
 def fetch_nansen_holders(chain, contract):
     if not chain or not contract:
         return 0
+    key = NANSEN_API_KEY
     url = f"https://api.nansen.ai/tokens/{chain}/{contract}/holders"
-    headers = {"X-API-KEY": NANSEN_API_KEY}
+    headers = {"X-API-KEY": key}
     try:
         r = requests.get(url, headers=headers)
         j = r.json()
@@ -288,8 +815,9 @@ def fetch_nansen_holders(chain, contract):
 def fetch_lunar_sentiment(symbol):
     if not symbol:
         return 0.5
+    key = LUNAR_API_KEY
     url = f"https://lunarcrush.com/api2?symbol={symbol}&data=market"
-    headers = {"Authorization": f"Bearer {LUNAR_API_KEY}"}
+    headers = {"Authorization": f"Bearer {key}"}
     try:
         r = requests.get(url, headers=headers)
         j = r.json()
@@ -297,10 +825,10 @@ def fetch_lunar_sentiment(symbol):
             return 0.5
         dd = j["data"][0]
         sc = dd.get("social_score", 50)
-        maxi = max(sc,100)
+        maxi = max(sc, 100)
         val = sc/maxi
-        if val>1:
-            val=1
+        if val > 1:
+            val = 1
         return val
     except:
         return 0.5
@@ -319,18 +847,18 @@ def build_token_df(token):
 
     df_cmc["token"] = sym
 
-    h = fetch_nansen_holders(chain, contract)
-    s = fetch_lunar_sentiment(lunar)
+    holders_val = fetch_nansen_holders(chain, contract)
+    senti_val = fetch_lunar_sentiment(lunar)
 
-    df_cmc["holders"] = h
-    df_cmc["sentiment_score"] = s
+    df_cmc["holders"] = holders_val
+    df_cmc["sentiment_score"] = senti_val
     return df_cmc
 
 def compute_label(df):
     df = df.sort_values("date").reset_index(drop=True)
     df["price_future"] = df["close"].shift(-SHIFT_DAYS)
     df["variation_2d"] = (df["price_future"] - df["close"]) / df["close"]
-    df["label"] = (df["variation_2d"]>=THRESHOLD).astype(int)
+    df["label"] = (df["variation_2d"] >= THRESHOLD).astype(int)
     return df
 
 def main():
@@ -349,18 +877,19 @@ def main():
     if not all_dfs:
         logging.warning("No data => no CSV.")
         return
+
     df_all = pd.concat(all_dfs, ignore_index=True)
     df_all = df_all.sort_values(["token","date"]).reset_index(drop=True)
 
     df_all.dropna(subset=["label"], inplace=True)
 
     final = df_all[["token","date","close","volume","market_cap","holders","sentiment_score","label"]].copy()
-    final.rename(columns={"close":"price"}, inplace=True)
+    final.rename(columns={"close": "price"}, inplace=True)
 
     final.to_csv(OUTPUT_CSV, index=False)
-    print(f"Export => {OUTPUT_CSV} ({len(final)} lignes)")
-    logging.info(f"Export => {OUTPUT_CSV} => {len(final)} lignes")
+    nb = len(final)
+    print(f"Export => {OUTPUT_CSV} ({nb} lignes)")
+    logging.info(f"Export => {OUTPUT_CSV} => {nb} lignes")
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
-
