@@ -3,39 +3,67 @@
 
 import requests
 import logging
-import os
 import csv
 
 """
+check_tokens_validity.py
+------------------------
 Ce script interroge l'endpoint CoinMarketCap /v1/cryptocurrency/map
-pour chaque token symbol, afin de vérifier s'il est reconnu, et récupère
-'first_historical_data', 'last_historical_data', 'is_active', etc.
+pour vérifier la validité (existence / is_active / etc.) de chaque token 
+sur la base de son symbol.
 
-Usage:
-  python check_tokens_validity.py
-  --> Génère un fichier check_tokens_validity.log + un CSV result_tokens.csv
+Il génère :
+- un fichier de logs: check_tokens_validity.log
+- un fichier CSV: result_tokens.csv
+
+UTILISATION:
+    1) Placez ce fichier dans votre repo GitHub.
+    2) Ajoutez un workflow (.yml) pour exécuter 'python check_tokens_validity.py'
+       et consulter les logs en sortie.
+
+Notes:
+    - Ajoutez vos 102 tokens + BTC, ETH, LINK ci-dessous.
+    - Les retours 'first_historical_data' / 'last_historical_data' 
+      vous indiqueront la plage d'historique disponible.
+    - S'il n'y a pas de correspondance, 'found' = "No".
+    - S'il y a une erreur HTTP 429 ou 400, on l'indique.
 """
 
-CMC_API_KEY = "VOTRE_CLE_CMC_ICI"  # Mettez ici votre clé (ex: "0a602f8f-xxx")
+# ====================================================
+# 1) VOS INFORMATIONS / CONFIG
+# ====================================================
 
-# Liste de tokens : 102 de votre choix + BTC, ETH, LINK
-# (Exemple minimal, à adapter: ci-dessous "SOLVEX", "FAI" etc.)
-TOKENS = [
-    "SOLVEX", "FAI", "PATRIOT",  # 3 "exotiques"
-    # ... (ajoutez vos 99 autres symboles) ...
-    "BTC",   # un token certain
-    "ETH",   # un token certain
-    "LINK"   # un token certain
-]
-
+CMC_API_KEY = "0a602f8f-2a68-4992-89f2-7e7416a4d8e8"  # <-- Votre clé CoinMarketCap
 LOG_FILE = "check_tokens_validity.log"
 CSV_FILE = "result_tokens.csv"
 
+# ====================================================
+# 2) LISTE DE TOKENS
+#    Ajoutez ici vos 102 tokens exacts (symbol), + BTC, ETH, LINK
+# ====================================================
+TOKENS = [
+    # Exemples => vous compléterez le reste
+    "SOLVEX",
+    "FAI",
+    "PATRIOT",
+    # ...
+    # Ajoutez ici tous vos symboles (total 102).
+    # ...
+    "BTC",   # certain
+    "ETH",   # certain
+    "LINK",  # certain, UCID=1975
+]
+
+
+# ====================================================
+# 3) INITIALISATION DU LOGGING
+# ====================================================
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
+
 
 def main():
     logging.info("=== START check_tokens_validity ===")
@@ -46,28 +74,29 @@ def main():
         "Accepts": "application/json"
     }
 
-    # On va stocker les résultats (liste de dict)
+    # On stockera les résultats dans une liste de dict
     results = []
 
     for symbol in TOKENS:
-        # On appelle /map?symbol=...
+        # On appelle l'endpoint /map avec ?symbol=<symbol>
         params = {
-            "symbol": symbol,               # On recherche la correspondance par symbole
-            "listing_status": "active,untracked"  # pour être large
+            "symbol": symbol,
+            "listing_status": "active,untracked"  
+            # "untracked" inclut les projets qui n'ont pas (encore) de marché
         }
 
-        logging.info(f"[CHECK] symbol={symbol}, url={url}, params={params}")
+        logging.info(f"[CHECK] symbol={symbol}, GET {url} params={params}")
         try:
             r = requests.get(url, headers=headers, params=params)
-            status_code = r.status_code
-            logging.info(f"[CHECK] symbol={symbol} => status_code={status_code}")
+            sc = r.status_code
+            logging.info(f"[CHECK] symbol={symbol} => status_code={sc}")
 
-            if status_code != 200:
-                logging.warning(f"{symbol}: HTTP {status_code}")
-                # On met un enregistrement "KO" direct
+            if sc != 200:
+                # On log un warning et on range un enregistrement minimal
+                logging.warning(f"{symbol}: HTTP {sc}")
                 results.append({
                     "symbol": symbol,
-                    "found": "No (HTTP error)",
+                    "found": f"No (HTTP {sc})",
                     "id": None,
                     "is_active": None,
                     "first_historical_data": None,
@@ -75,11 +104,13 @@ def main():
                 })
                 continue
 
+            # On parse la réponse JSON
             j = r.json()
             data = j.get("data", [])
+
             if not data:
-                # => pas trouvé
-                logging.info(f"{symbol}: data vide => token introuvable ou inactif")
+                # => token inconnu
+                logging.info(f"{symbol}: Pas de correspondance (data=vide).")
                 results.append({
                     "symbol": symbol,
                     "found": "No",
@@ -90,29 +121,15 @@ def main():
                 })
                 continue
 
-            # data est une liste d'objets. ex:
-            # [
-            #   {
-            #     "id": 28301,
-            #     "name": "SolvexNetwork",
-            #     "symbol": "SOLVEX",
-            #     "slug": "solvex-network",
-            #     "is_active": 1,
-            #     "first_historical_data": "2023-01-02T00:00:00Z",
-            #     "last_historical_data": "2023-12-29T00:00:00Z",
-            #     ...
-            #   }
-            # ]
-            # Il peut y avoir plusieurs correspondances. On va prendre la 1re:
-            first_match = data[0]
-            coin_id = first_match.get("id", None)
-            is_active = first_match.get("is_active", None)
-            fhd = first_match.get("first_historical_data", None)
-            lhd = first_match.get("last_historical_data", None)
+            # data est un tableau => on prend la première correspondance
+            first_item = data[0]
+            coin_id = first_item.get("id")
+            is_active = first_item.get("is_active")
+            fhd = first_item.get("first_historical_data")
+            lhd = first_item.get("last_historical_data")
 
-            # On log
-            logging.info(f"{symbol}: found ID={coin_id}, is_active={is_active}, "
-                         f"fhd={fhd}, lhd={lhd}")
+            logging.info(f"{symbol}: found => id={coin_id}, is_active={is_active},"
+                         f" fhd={fhd}, lhd={lhd}")
 
             results.append({
                 "symbol": symbol,
@@ -124,7 +141,7 @@ def main():
             })
 
         except Exception as e:
-            logging.error(f"[ERROR] {symbol} => {e}")
+            logging.error(f"[ERROR] symbol={symbol} => {e}")
             results.append({
                 "symbol": symbol,
                 "found": f"Error: {e}",
@@ -134,18 +151,28 @@ def main():
                 "last_historical_data": None
             })
 
-    # Ecriture CSV
+    # ====================================================
+    # 4) Génération d'un CSV
+    # ====================================================
     with open(CSV_FILE, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=["symbol","found","id","is_active","first_historical_data","last_historical_data"]
+            fieldnames=[
+                "symbol",
+                "found",
+                "id",
+                "is_active",
+                "first_historical_data",
+                "last_historical_data"
+            ]
         )
         writer.writeheader()
         for row in results:
             writer.writerow(row)
 
-    logging.info(f"==> CSV generated: {CSV_FILE} with {len(results)} entries")
+    logging.info(f"CSV generated: {CSV_FILE} with {len(results)} tokens.")
     logging.info("=== END check_tokens_validity ===")
+
 
 if __name__ == "__main__":
     main()
