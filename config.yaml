@@ -78,31 +78,31 @@ exchanges:
       "ENJ": "ENJUSDT"
       "GALA": "GALAUSDT"
       "ALICE": "ALICEUSDT"
-      # ci-dessous, les 25 restants
-      "DAR": "DARUSDT"
-      "TLM": "TLMUSDT"
-      "YGG": "YGGUSDT"
-      "SWEAT": "SWEATUSDT"
-      "GMT": "GMTUSDT"
-      "FITFI": "FITFIUSDT"
-      "GST": "GSTUSDT"
-      "RACA": "RACAUSDT"
-      "SPS": "SPSUSDT"
-      "THG": "THGUSDT"
-      "TOWER": "TOWERUSDT"
-      "UFO": "UFOUSDT"
-      "VRA": "VRAUSDT"
-      "WAXP": "WAXPUSDT"
-      "XCAD": "XCADUSDT"
+      "APT": "APTUSDT"
+      "OP": "OPUSDT"
+      "ARB": "ARBUSDT"
+      "FTM": "FTMUSDT"
+      "NEAR": "NEARUSDT"
+      "AAVE": "AAVEUSDT"
+      "XTZ": "XTZUSDT"
+      "THETA": "THETAUSDT"
+      "FLOW": "FLOWUSDT"
+      "EGLD": "EGLDUSDT"
+      "ICP": "ICPUSDT"
+      "VET": "VETUSDT"
+      "HBAR": "HBARUSDT"
+      "ALGO": "ALGOUSDT"
+      "STX": "STXUSDT"
+      "EOS": "EOSUSDT"
+      "KAVA": "KAVAUSDT"
+      "ZIL": "ZILUSDT"
+      "1INCH": "1INCHUSDT"
+      "GNO": "GNOUSDT"
       "LRC": "LRCUSDT"
-      "SKL": "SKLUSDT"
-      "RLB": "RLBUSDT"
-      "METIS": "METISUSDT"
-      "T": "TUSDT"
-      "BICO": "BICOUSDT"
-      "SSV": "SSVUSDT"
-      # XYO déjà plus haut => si c'est #101 c'est un doublon, on l'ignore
-      "UMA": "UMAUSDT"
+      "SUSHI": "SUSHIUSDT"
+      "BAL": "BALUSDT"
+      "YFI": "YFIUSDT"
+      "SRM": "SRMUSDT"
 
 coinmarketcap:
   api_key: "0a602f8f-2a68-4992-89f2-7e7416a4d8e8"
@@ -119,13 +119,13 @@ binance_api:
 
 tokens:
   - symbol: "SOLVEX"
-    cmc_id: 28301
+    cmc_id: 9604
     nansen_chain: "eth"
     nansen_contract: "0x2d7a47908d817dd359b9595c19f6d9e1c994472a"
     lunar_symbol: "SOLVEX"
 
   - symbol: "PATRIOT"
-    cmc_id: 27669
+    cmc_id: 2988
     nansen_chain: "bsc"
     nansen_contract: "0x6d48b2d0de4d2e6c5f0a3b0b2824b99b42ed56d1"
     lunar_symbol: "PATRIOT"
@@ -247,7 +247,7 @@ tokens:
   - symbol: "XYO"
     cmc_id: 2765
     nansen_chain: "eth"
-    nansen_contract: "0x55296f69f40ea6d20e478533c15a6b08b654e758"
+    nansen_contract: "0x55296f69f40ea6d20e478533c15a6b08b654e758",
     lunar_symbol: "XYO"
 
   - symbol: "WHBAR"
@@ -342,8 +342,8 @@ tokens:
 
   - symbol: "TOMI"
     cmc_id: 16834
-    nansen_chain: "eth"
-    nansen_contract: "0x2b8a564379e7f8ee988e0e4a3aa4b5f1aee6a578"
+    nansen_chain: null
+    nansen_contract: null
     lunar_symbol: "TOMI"
 
   - symbol: "ARTY"
@@ -360,8 +360,8 @@ tokens:
 
   - symbol: "AXOL"
     cmc_id: 28547
-    nansen_chain: "arbitrum"
-    nansen_contract: "0x3e6648c5a70a150a88bce65f4ad4d506fe15d2af"
+    nansen_chain: null
+    nansen_contract: null
     lunar_symbol: "AXOL"
 
   - symbol: "AAAHHM"
@@ -377,7 +377,7 @@ tokens:
     lunar_symbol: "ATA"
 
   - symbol: "UTK"
-    cmc_id: 2320
+    cmc_id: 28816
     nansen_chain: "eth"
     nansen_contract: "0xdc9ac3c20d1ed0b540df9b1fedc10039df13f99c"
     lunar_symbol: "UTK"
@@ -390,8 +390,8 @@ tokens:
 
   - symbol: "CELL"
     cmc_id: 8993
-    nansen_chain: "eth"
-    nansen_contract: "0x26c8afbbfe1ebaca03c2bb082e69d0476bffe099"
+    nansen_chain: null
+    nansen_contract: null
     lunar_symbol: "CELL"
 
   - symbol: "IDEX"
@@ -413,9 +413,9 @@ tokens:
     lunar_symbol: "CA"
 
   - symbol: "ORDER"
-    cmc_id: 28874
-    nansen_chain: "eth"
-    nansen_contract: "0x20393be0d2643ed542394E31eF0909cF1437B6ef"
+    cmc_id: 27682
+    nansen_chain: null
+    nansen_contract: null
     lunar_symbol: "ORDER"
 
   - symbol: "CXT"
@@ -432,14 +432,14 @@ tokens:
 
   - symbol: "SYNT"
     cmc_id: 28453
-    nansen_chain: null
-    nansen_contract: null
+    nansen_chain: "eth"
+    nansen_contract: "0x11a068Ea42F9454E591C94eB0f2Ea0c5bC7aAfd7"
     lunar_symbol: "SYNT"
 
   - symbol: "ZKJ"
     cmc_id: 28237
-    nansen_chain: "eth"
-    nansen_contract: "0x8ECa806Aecc86CE90Da803b080Ca4E3A9b8097ad"
+    nansen_chain: null
+    nansen_contract: null
     lunar_symbol: "ZKJ"
 
   - symbol: "DBR"
@@ -521,7 +521,7 @@ tokens:
     lunar_symbol: "CQT"
 
   - symbol: "DAG"
-    cmc_id: 2868
+    cmc_id: 3843
     nansen_chain: null
     nansen_contract: null
     lunar_symbol: "DAG"
@@ -533,15 +533,15 @@ tokens:
     lunar_symbol: "UOS"
 
   - symbol: "PYR"
-    cmc_id: 8707
+    cmc_id: 8750
     nansen_chain: "eth"
-    nansen_contract: "0x430ef9263e76daae63c84292c3409d61c598e9682"
+    nansen_contract: "0x430EF9263E76DAE63c84292C3409D61c598E9682"
     lunar_symbol: "PYR"
 
   - symbol: "ILV"
-    cmc_id: 8719
+    cmc_id: 9399
     nansen_chain: "eth"
-    nansen_contract: "0x5e6b6d9abad9093fdc861ea1600eba1b355cd940"
+    nansen_contract: "0x767FE9EDC9E0dF98E07454847909b5E959D7ca0E"
     lunar_symbol: "ILV"
 
   - symbol: "AXS"
@@ -580,150 +580,155 @@ tokens:
     nansen_contract: "0xAC51066d7bEC65Dc4589368da368b212745d63E8"
     lunar_symbol: "ALICE"
 
-  # Ajout 25 restants
-  - symbol: "DAR"
-    cmc_id: 11055
-    nansen_chain: "eth"
-    nansen_contract: "0x081131434f93063751813c619ecca9c4dc7862a3"
-    lunar_symbol: "DAR"
-
-  - symbol: "TLM"
-    cmc_id: 9119
-    nansen_chain: "eth"
-    nansen_contract: "0x888888888888f195e27a2e0f98d712952ab9348e"
-    lunar_symbol: "TLM"
-
-  - symbol: "YGG"
-    cmc_id: 10688
-    nansen_chain: "eth"
-    nansen_contract: "0x25f8087ead173b73d6e8b84329989a8eea16cf73"
-    lunar_symbol: "YGG"
-
-  - symbol: "SWEAT"
-    cmc_id: 15710
+  - symbol: "APT"
+    cmc_id: 21794
     nansen_chain: null
     nansen_contract: null
-    lunar_symbol: "SWEAT"
+    lunar_symbol: "APT"
 
-  - symbol: "GMT"
-    cmc_id: 18069
+  - symbol: "OP"
+    cmc_id: 11840
     nansen_chain: null
     nansen_contract: null
-    lunar_symbol: "GMT"
+    lunar_symbol: "OP"
 
-  - symbol: "FITFI"
-    cmc_id: 18876
+  - symbol: "ARB"
+    cmc_id: 11841
     nansen_chain: null
     nansen_contract: null
-    lunar_symbol: "FITFI"
+    lunar_symbol: "ARB"
 
-  - symbol: "GST"
-    cmc_id: 21861
+  - symbol: "FTM"
+    cmc_id: 3513
     nansen_chain: null
     nansen_contract: null
-    lunar_symbol: "GST"
+    lunar_symbol: "FTM"
 
-  - symbol: "RACA"
-    cmc_id: 11396
-    nansen_chain: "bsc"
-    nansen_contract: "0x12bb890508c125661e03b09ec06e404bc9289040"
-    lunar_symbol: "RACA"
-
-  - symbol: "SPS"
-    cmc_id: 11101
+  - symbol: "NEAR"
+    cmc_id: 6535
     nansen_chain: null
     nansen_contract: null
-    lunar_symbol: "SPS"
+    lunar_symbol: "NEAR"
 
-  - symbol: "THG"
-    cmc_id: 11995
-    nansen_chain: "bsc"
-    nansen_contract: "0x24802247bd157d771b7effa205237d8e9269ba8a"
-    lunar_symbol: "THG"
-
-  - symbol: "TOWER"
-    cmc_id: 8666
-    nansen_chain: "eth"
-    nansen_contract: "0x1c9922314ed1415c95b9fd453c3818fd41867d0b"
-    lunar_symbol: "TOWER"
-
-  - symbol: "UFO"
-    cmc_id: 11854
-    nansen_chain: "eth"
-    nansen_contract: "0x249848be0ca86be718aa5e8a5c7f80d4c5a5579e"
-    lunar_symbol: "UFO"
-
-  - symbol: "VRA"
-    cmc_id: 3816
-    nansen_chain: "eth"
-    nansen_contract: "0xf411903cbc70a74d22900a5de66a2dda66507255"
-    lunar_symbol: "VRA"
-
-  - symbol: "WAXP"
-    cmc_id: 2300
+  - symbol: "AAVE"
+    cmc_id: 7278
     nansen_chain: null
     nansen_contract: null
-    lunar_symbol: "WAXP"
+    lunar_symbol: "AAVE"
 
-  - symbol: "XCAD"
-    cmc_id: 9383
-    nansen_chain: "eth"
-    nansen_contract: "0x7659ce147d0e714454073a5dd7003544234b6aa0"
-    lunar_symbol: "XCAD"
+  - symbol: "XTZ"
+    cmc_id: 2011
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "XTZ"
+
+  - symbol: "THETA"
+    cmc_id: 2416
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "THETA"
+
+  - symbol: "FLOW"
+    cmc_id: 4558
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "FLOW"
+
+  - symbol: "EGLD"
+    cmc_id: 6892
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "EGLD"
+
+  - symbol: "ICP"
+    cmc_id: 8916
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "ICP"
+
+  - symbol: "VET"
+    cmc_id: 3077
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "VET"
+
+  - symbol: "HBAR"
+    cmc_id: 4642
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "HBAR"
+
+  - symbol: "ALGO"
+    cmc_id: 4030
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "ALGO"
+
+  - symbol: "STX"
+    cmc_id: 4847
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "STX"
+
+  - symbol: "EOS"
+    cmc_id: 1765
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "EOS"
+
+  - symbol: "KAVA"
+    cmc_id: 4846
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "KAVA"
+
+  - symbol: "ZIL"
+    cmc_id: 2469
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "ZIL"
+
+  - symbol: "1INCH"
+    cmc_id: 8104
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "1INCH"
+
+  - symbol: "GNO"
+    cmc_id: 1659
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "GNO"
 
   - symbol: "LRC"
     cmc_id: 1934
-    nansen_chain: "eth"
-    nansen_contract: "0xbbbbca6a901c926f240b89eacb641d8aec7aeafd"
+    nansen_chain: null
+    nansen_contract: null
     lunar_symbol: "LRC"
 
-  - symbol: "SKL"
-    cmc_id: 5691
-    nansen_chain: "eth"
-    nansen_contract: "0x00c83aecc790e8a4453e5dd3b0b4b3680501a7a7"
-    lunar_symbol: "SKL"
+  - symbol: "SUSHI"
+    cmc_id: 6758
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "SUSHI"
 
-  - symbol: "RLB"
-    cmc_id: 24064
-    nansen_chain: "eth"
-    nansen_contract: "0x872dD1595544CE22ad1e0174449C7ECE6F0bb01b"
-    lunar_symbol: "RLB"
+  - symbol: "BAL"
+    cmc_id: 6538
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "BAL"
 
-  - symbol: "METIS"
-    cmc_id: 9640
-    nansen_chain: "eth"
-    nansen_contract: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000"
-    lunar_symbol: "METIS"
+  - symbol: "YFI"
+    cmc_id: 5864
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "YFI"
 
-  - symbol: "T"
-    cmc_id: 9476
-    nansen_chain: "eth"
-    nansen_contract: "0xDc8AF07A7861Bedd104b8093ae3e9376fc8596d2"
-    lunar_symbol: "T"
-
-  - symbol: "BICO"
-    cmc_id: 11222
-    nansen_chain: "eth"
-    nansen_contract: "0xf17e65822b568b3903685a7c9f496cf7656cc6c2"
-    lunar_symbol: "BICO"
-
-  - symbol: "SSV"
-    cmc_id: 18902
-    nansen_chain: "eth"
-    nansen_contract: "0x9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f"
-    lunar_symbol: "SSV"
-
-  - symbol: "XYO" # doublon ? déjà vu #22, on recopie
-    cmc_id: 2765
-    nansen_chain: "eth"
-    nansen_contract: "0x55296f69f40ea6d20e478533c15a6b08b654e758"
-    lunar_symbol: "XYO"
-
-  - symbol: "UMA"
-    cmc_id: 5617
-    nansen_chain: "eth"
-    nansen_contract: "0x04fa0d235c4abf4bcf4787af4cf447de572ef828"
-    lunar_symbol: "UMA"
+  - symbol: "SRM"
+    cmc_id: 6187
+    nansen_chain: null
+    nansen_contract: null
+    lunar_symbol: "SRM"
 
 risk:
   max_positions: 15
