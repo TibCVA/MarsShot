@@ -773,7 +773,7 @@ def fetch_cmc_history(cmc_id, days=30):
         "convert": "USD"
     }
 
-    # -- NOUVEAU LOG DEBUG : URL, param, cmc_id
+    # -- NOUVEAU LOG DEBUG : URL, params, cmc_id
     logging.info(f"[CMC DEBUG] Trying cmc_id={cmc_id}, url={url}, params={params}")
 
     try:
@@ -795,8 +795,25 @@ def fetch_cmc_history(cmc_id, days=30):
 
         rows = []
         for q in quotes:
-            ...
-        # le reste inchangé
+            t = q["timestamp"]
+            dd = datetime.fromisoformat(t.replace("Z",""))
+            usd = q["quote"].get("USD", {})
+            o = usd.get("open", None)
+            h = usd.get("high", None)
+            lo = usd.get("low", None)
+            c = usd.get("close", None)
+            vol = usd.get("volume", None)
+            mc = usd.get("market_cap", None)
+
+            if (o is None) or (h is None) or (lo is None) or (c is None):
+                continue
+
+            rows.append([dd, o, h, lo, c, vol, mc])
+
+        df = pd.DataFrame(rows, columns=["date","open","high","low","close","volume","market_cap"])
+        df.sort_values("date", inplace=True)
+        df.reset_index(drop=True, inplace=True)
+        return df
 
     except Exception as e:
         logging.error(f"[CMC ERROR] {cmc_id} => {e}")
