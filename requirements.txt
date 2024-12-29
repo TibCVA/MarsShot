@@ -1,1 +1,9 @@
+requests
+pandas
+numpy
+scikit-learn
+joblib
+python-binance
+PyYAML
+ta
 
