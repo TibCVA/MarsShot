@@ -76,10 +76,38 @@ TOKENS = [
     {"symbol": "GALA"},
     {"symbol": "SUI"},
     {"symbol": "QNT"},
-    {"symbol": "LINK"}
+    {"symbol": "LINK"},
+    {"symbol": "SOLVEX"},
+    {"symbol": "COOKIE"},
+    {"symbol": "A8"},
+    {"symbol": "PRQ"},
+    {"symbol": "PHA"},
+    {"symbol": "XYO"},
+    {"symbol": "MCADE"},
+    {"symbol": "COW"},
+    {"symbol": "AVA"},
+    {"symbol": "DF"},
+    {"symbol": "XVG"},
+    {"symbol": "AGLD"},
+    {"symbol": "WILD"},
+    {"symbol": "CPOOL"},
+    {"symbol": "ZEN"},
+    {"symbol": "UTK"},
+    {"symbol": "WHBAR"},
+    {"symbol": "SHIBTC"},
+    {"symbol": "NCT"},
+    {"symbol": "SRX"},
+    {"symbol": "OMI"},
+    {"symbol": "ACX"},
+    {"symbol": "ARTY"},
+    {"symbol": "FIRO"},
+    {"symbol": "SHDW"},
+    {"symbol": "VELO"},
+    {"symbol": "SWFTC"},
+    {"symbol": "CXT"},
+    {"symbol": "ZENT"},
+    {"symbol": "IDEX"}
 ]
-
-
 
 #####################################
 # FONCTIONS
