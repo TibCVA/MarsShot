@@ -1,20 +1,16 @@
 name: Build CSV and Push
 
+# Déclencheurs :
 on:
   workflow_dispatch:
-    # Permet de déclencher manuellement le workflow depuis l'onglet Actions
+    # permet de lancer manuellement
   push:
     branches:
       - main
-    # On peut éventuellement exclure le commit auto s'il correspond à un message défini
-    #    (ex: si on ne veut pas re-déclencher le workflow pour le commit "Auto-update training_data.csv")
-    # Cela se fait avec:
-    # branches-ignore:
-    #   - main
-    # 
-    # OU:
-    # paths-ignore:
-    #   - 'training_data.csv'
+    # vous pouvez exclure plus finement si besoin
+
+permissions:
+  contents: write  # important : autorise l'écriture (push) sur le repo
 
 jobs:
   build-csv:
@@ -24,15 +20,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          persist-credentials: false
-          # ci-dessus : "false" si l'on veut soi-même configurer git plus loin,
-          # mais on peut laisser "true" si on veut que la config GitHub TOKEN soit auto.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: true
+          fetch-depth: 0
+        # persist-credentials: true => permet de conserver les credentials
+        # fetch-depth: 0 => on récupère tout l'historique, parfois nécessaire si on veut pusher
 
-      - name: Configure git (pour utiliser GITHUB_TOKEN)
+      - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # force la branche main ou autre
+          # Vérifie qu'on est bien sur la branche main
           git checkout main
 
       - name: Set up Python
@@ -43,7 +41,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --no-cache-dir -r requirements.txt
-          # Ajustez selon vos besoins; ex: pip install pandas requests
+          # ajustez selon vos besoins (pandas, requests, etc.)
 
       - name: Run build_csv.py
         run: |
@@ -53,23 +51,23 @@ jobs:
 
       - name: Show generated CSV
         run: |
-          echo "Content (head) of training_data.csv :"
-          head -n 20 training_data.csv
-          echo "===="
+          if [ -f "training_data.csv" ]; then
+            echo "===== training_data.csv HEAD ====="
+            head -n 20 training_data.csv
+            echo "===== End of HEAD ====="
+          else
+            echo "No training_data.csv found."
+          fi
 
       - name: Commit and Push CSV
         if: always()
         run: |
-          # S'il n'existe pas => pas de commit
           if [ -f "training_data.csv" ]; then
             echo "training_data.csv found => commit & push"
-            # On commit le CSV
             git add training_data.csv
-            git commit -m "Auto-update training_data.csv [skip ci]"
-            # On push via GITHUB_TOKEN
-            git push origin HEAD:main
+            # [skip ci] ou [ci skip] n'est pas officiellement géré par GH Actions,
+            # mais c'est inoffensif si vous voulez un tag dans le message.
+            git commit -m "Auto-update training_data.csv [skip ci]" || echo "Nothing to commit."
+            git push origin main
           else
             echo "No training_data.csv => skip commit."
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
