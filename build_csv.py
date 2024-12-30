@@ -36,24 +36,149 @@ logging.info("=== START build_csv ===")
 #####################################
 TOKENS = [
     {
-        "symbol": "ETH",
-        "cmc_id": 1027,      # CoinMarketCap ID pour Ethereum
-        "lunar_symbol": "ETH"
+        "symbol": "GOAT",
+        "cmc_id": 171,
+        "lunar_symbol": "GOAT"
+    },
+    {
+        "symbol": "FARTCOIN",
+        "cmc_id": 33597,
+        "lunar_symbol": "FARTCOIN"
+    },
+    {
+        "symbol": "ZEREBRO",
+        "cmc_id": 34083,
+        "lunar_symbol": "ZEREBRO"
+    },
+    {
+        "symbol": "STNK",
+        "cmc_id": 10332,
+        "lunar_symbol": "STNK"
+    },
+    {
+        "symbol": "BONK",
+        "cmc_id": 23095,
+        "lunar_symbol": "BONK"
+    },
+    {
+        "symbol": "FET",
+        "cmc_id": 3773,
+        "lunar_symbol": "FET"
+    },
+    {
+        "symbol": "AGIX",
+        "cmc_id": 2424,
+        "lunar_symbol": "AGIX"
+    },
+    {
+        "symbol": "NMR",
+        "cmc_id": 1732,
+        "lunar_symbol": "NMR"
+    },
+    {
+        "symbol": "CTXC",
+        "cmc_id": 2638,
+        "lunar_symbol": "CTXC"
+    },
+    {
+        "symbol": "VLX",
+        "cmc_id": 4747,
+        "lunar_symbol": "VLX"
+    },
+    {
+        "symbol": "VET",
+        "cmc_id": 3077,
+        "lunar_symbol": "VET"
+    },
+    {
+        "symbol": "CHZ",
+        "cmc_id": 4066,
+        "lunar_symbol": "CHZ"
+    },
+    {
+        "symbol": "ENJ",
+        "cmc_id": 2130,
+        "lunar_symbol": "ENJ"
+    },
+    {
+        "symbol": "MANA",
+        "cmc_id": 1966,
+        "lunar_symbol": "MANA"
+    },
+    {
+        "symbol": "SAND",
+        "cmc_id": 6210,
+        "lunar_symbol": "SAND"
+    },
+    {
+        "symbol": "INJ",
+        "cmc_id": 7226,
+        "lunar_symbol": "INJ"
+    },
+    {
+        "symbol": "WOO",
+        "cmc_id": 7501,
+        "lunar_symbol": "WOO"
+    },
+    {
+        "symbol": "OP",
+        "cmc_id": 11840,
+        "lunar_symbol": "OP"
+    },
+    {
+        "symbol": "ARB",
+        "cmc_id": 11841,
+        "lunar_symbol": "ARB"
+    },
+    {
+        "symbol": "SNX",
+        "cmc_id": 2586,
+        "lunar_symbol": "SNX"
+    },
+    {
+        "symbol": "LDO",
+        "cmc_id": 8000,
+        "lunar_symbol": "LDO"
+    },
+    {
+        "symbol": "RUNE",
+        "cmc_id": 4157,
+        "lunar_symbol": "RUNE"
+    },
+    {
+        "symbol": "RVF",
+        "cmc_id": 9176,
+        "lunar_symbol": "RVF"
+    },
+    {
+        "symbol": "ROSE",
+        "cmc_id": 7653,
+        "lunar_symbol": "ROSE"
+    },
+    {
+        "symbol": "ALGO",
+        "cmc_id": 4030,
+        "lunar_symbol": "ALGO"
+    },
+    {
+        "symbol": "GALA",
+        "cmc_id": 7080,
+        "lunar_symbol": "GALA"
+    },
+    {
+        "symbol": "SUI",
+        "cmc_id": 20947,
+        "lunar_symbol": "SUI"
+    },
+    {
+        "symbol": "QNT",
+        "cmc_id": 3155,
+        "lunar_symbol": "QNT"
     },
     {
         "symbol": "LINK",
-        "cmc_id": 1975,      # CoinMarketCap ID pour Chainlink
+        "cmc_id": 1975,
         "lunar_symbol": "LINK"
-    },
-    {
-        "symbol": "SOLVEX",
-        "cmc_id": 9604,      # CoinMarketCap ID pour Solvex
-        "lunar_symbol": "SOLVEX"
-    },
-    {
-        "symbol": "MOEW",
-        "cmc_id": 28839,     # CoinMarketCap ID pour Moew
-        "lunar_symbol": "MOEW"
     }
 ]
 
