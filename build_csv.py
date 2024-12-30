@@ -6,432 +6,261 @@ import pandas as pd
 import time
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
+from typing import Optional
 
 #####################################
 # PARAMÈTRES GLOBAUX
 #####################################
-CMC_API_KEY = "0a602f8f-2a68-4992-89f2-7e7416a4d8e8"
+
 LUNAR_API_KEY = "85zhfo9yl9co22cl7kw2sucossm59awchvwf8s8ub"
 
-DAYS = 30
+# Nombre de jours d’horizon pour récupérer l’historique sur 1 an
+# (LunarCrush gérera interval=1y, qui ~ 365 jours)
+DAYS_HISTORY = 365
+
+# Paramètres pour le label
 SHIFT_DAYS = 2
 THRESHOLD = 0.30
 
+# Fichier CSV de sortie
 OUTPUT_CSV = "training_data.csv"
+
+# Fichier de logs
 LOG_FILE = "build_csv.log"
 
-# Pause entre chaque token pour éviter 429 (10 req/min max sur LunarCrush)
-PAUSE_SECONDS = 6
+# Temps d'attente pour éviter le rate-limit (10 requêtes/minute)
+SLEEP_BETWEEN_TOKENS = 6  # en secondes
 
+# Configuration du logger
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
-logging.info("=== START build_csv ===")
+logging.info("=== START build_csv_lunar_only ===")
+
 
 #####################################
-# LISTE DES 4 TOKENS (exemple)
+# LISTE DES TOKENS À TRAITER
 #####################################
+# Exemple simplifié avec 4 tokens "ETH", "LINK", "SOLVEX", "MOEW".
+# Vous pouvez en ajouter autant que vous voulez, tant que vous respectez
+# le rate-limit imposé par l’API LunarCrush.
 TOKENS = [
-    {
-        "symbol": "GOAT",
-        "cmc_id": 171,
-        "lunar_symbol": "GOAT"
-    },
-    {
-        "symbol": "FARTCOIN",
-        "cmc_id": 33597,
-        "lunar_symbol": "FARTCOIN"
-    },
-    {
-        "symbol": "ZEREBRO",
-        "cmc_id": 34083,
-        "lunar_symbol": "ZEREBRO"
-    },
-    {
-        "symbol": "STNK",
-        "cmc_id": 10332,
-        "lunar_symbol": "STNK"
-    },
-    {
-        "symbol": "BONK",
-        "cmc_id": 23095,
-        "lunar_symbol": "BONK"
-    },
-    {
-        "symbol": "FET",
-        "cmc_id": 3773,
-        "lunar_symbol": "FET"
-    },
-    {
-        "symbol": "AGIX",
-        "cmc_id": 2424,
-        "lunar_symbol": "AGIX"
-    },
-    {
-        "symbol": "NMR",
-        "cmc_id": 1732,
-        "lunar_symbol": "NMR"
-    },
-    {
-        "symbol": "CTXC",
-        "cmc_id": 2638,
-        "lunar_symbol": "CTXC"
-    },
-    {
-        "symbol": "VLX",
-        "cmc_id": 4747,
-        "lunar_symbol": "VLX"
-    },
-    {
-        "symbol": "VET",
-        "cmc_id": 3077,
-        "lunar_symbol": "VET"
-    },
-    {
-        "symbol": "CHZ",
-        "cmc_id": 4066,
-        "lunar_symbol": "CHZ"
-    },
-    {
-        "symbol": "ENJ",
-        "cmc_id": 2130,
-        "lunar_symbol": "ENJ"
-    },
-    {
-        "symbol": "MANA",
-        "cmc_id": 1966,
-        "lunar_symbol": "MANA"
-    },
-    {
-        "symbol": "SAND",
-        "cmc_id": 6210,
-        "lunar_symbol": "SAND"
-    },
-    {
-        "symbol": "INJ",
-        "cmc_id": 7226,
-        "lunar_symbol": "INJ"
-    },
-    {
-        "symbol": "WOO",
-        "cmc_id": 7501,
-        "lunar_symbol": "WOO"
-    },
-    {
-        "symbol": "OP",
-        "cmc_id": 11840,
-        "lunar_symbol": "OP"
-    },
-    {
-        "symbol": "ARB",
-        "cmc_id": 11841,
-        "lunar_symbol": "ARB"
-    },
-    {
-        "symbol": "SNX",
-        "cmc_id": 2586,
-        "lunar_symbol": "SNX"
-    },
-    {
-        "symbol": "LDO",
-        "cmc_id": 8000,
-        "lunar_symbol": "LDO"
-    },
-    {
-        "symbol": "RUNE",
-        "cmc_id": 4157,
-        "lunar_symbol": "RUNE"
-    },
-    {
-        "symbol": "RVF",
-        "cmc_id": 9176,
-        "lunar_symbol": "RVF"
-    },
-    {
-        "symbol": "ROSE",
-        "cmc_id": 7653,
-        "lunar_symbol": "ROSE"
-    },
-    {
-        "symbol": "ALGO",
-        "cmc_id": 4030,
-        "lunar_symbol": "ALGO"
-    },
-    {
-        "symbol": "GALA",
-        "cmc_id": 7080,
-        "lunar_symbol": "GALA"
-    },
-    {
-        "symbol": "SUI",
-        "cmc_id": 20947,
-        "lunar_symbol": "SUI"
-    },
-    {
-        "symbol": "QNT",
-        "cmc_id": 3155,
-        "lunar_symbol": "QNT"
-    },
-    {
-        "symbol": "LINK",
-        "cmc_id": 1975,
-        "lunar_symbol": "LINK"
-    }
+    {"symbol": "GOAT"},
+    {"symbol": "FARTCOIN"},
+    {"symbol": "ZEREBRO"},
+    {"symbol": "STNK"},
+    {"symbol": "BONK"},
+    {"symbol": "FET"},
+    {"symbol": "AGIX"},
+    {"symbol": "NMR"},
+    {"symbol": "CTXC"},
+    {"symbol": "VLX"},
+    {"symbol": "VET"},
+    {"symbol": "CHZ"},
+    {"symbol": "ENJ"},
+    {"symbol": "MANA"},
+    {"symbol": "SAND"},
+    {"symbol": "INJ"},
+    {"symbol": "WOO"},
+    {"symbol": "OP"},
+    {"symbol": "ARB"},
+    {"symbol": "SNX"},
+    {"symbol": "LDO"},
+    {"symbol": "RUNE"},
+    {"symbol": "RVF"},
+    {"symbol": "ROSE"},
+    {"symbol": "ALGO"},
+    {"symbol": "GALA"},
+    {"symbol": "SUI"},
+    {"symbol": "QNT"},
+    {"symbol": "LINK"}
 ]
+
+
 
 #####################################
 # FONCTIONS
 #####################################
 
-
-def build_date_range(days=30):
+def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
     """
-    Construit une liste de datetime pour les 'days' derniers jours
-    (chaque date à minuit UTC).
+    Récupère les données journalières (bucket=day) sur 1 an (interval=1y)
+    depuis l’endpoint v2 de LunarCrush :
+      GET /api4/public/coins/<symbol>/time-series/v2
+    On extrait :
+      time, open, close, high, low, volume_24h, market_cap, market_dominance,
+      circulating_supply, sentiment, spam, galaxy_score, volatility, alt_rank,
+      contributors_active, contributors_created, posts_active, posts_created,
+      interactions, social_dominance
+    Retourne un DataFrame ou None si échec.
     """
-    end_utc = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    start_utc = end_utc - timedelta(days=days-1)
-    return [start_utc + timedelta(days=i) for i in range(days)]
 
+    url = f"https://lunarcrush.com/api4/public/coins/{symbol}/time-series/v2"
 
-def fetch_cmc_history(cmc_id, days=30):
-    """
-    Récupère un historique daily de 'days' jours via l'endpoint
-    /v2/cryptocurrency/ohlcv/historical (CoinMarketCap).
-    Retourne un dict date_str => (close, volume, market_cap).
-    """
-    end_date = datetime.utcnow()
-    start_date = end_date - timedelta(days=days)
-
-    url = "https://pro-api.coinmarketcap.com/v2/cryptocurrency/ohlcv/historical"
-    headers = {
-        "X-CMC_PRO_API_KEY": CMC_API_KEY,
-        "Accepts": "application/json"
-    }
-    params = {
-        "id": str(cmc_id),
-        "time_start": start_date.isoformat(),
-        "time_end": end_date.isoformat(),
-        "interval": "1d",
-        "count": days,
-        "convert": "USD"
-    }
-
-    d_result = {}  # date_str -> (close, volume, mcap)
-
-    try:
-        r = requests.get(url, headers=headers, params=params, timeout=25)
-        logging.info(f"[CMC] GET {url} => status={r.status_code} (id={cmc_id})")
-        if r.status_code != 200:
-            logging.warning(f"[CMC WARNING] id={cmc_id}, HTTP={r.status_code}")
-            return d_result
-
-        j = r.json()
-        if "data" not in j or not j["data"]:
-            logging.warning(f"[CMC WARNING] id={cmc_id}, no data.")
-            return d_result
-
-        quotes = j["data"].get("quotes", [])
-        if not quotes:
-            return d_result
-
-        for item in quotes:
-            # item["time_close"] ex: "2024-12-01T23:59:59.999Z"
-            t_close = item.get("time_close")
-            if not t_close:
-                continue
-
-            dt_ = datetime.fromisoformat(t_close.replace("Z",""))
-            date_str = dt_.strftime("%Y-%m-%d")
-
-            usd = item["quote"].get("USD", {})
-            c = usd.get("close")
-            vol = usd.get("volume")
-            mc = usd.get("market_cap")
-
-            if c is None:
-                # On laisse possiblement volume, mc ?
-                # Mais si close=None => on met un tri ? On met tout None
-                c = None
-            # On stocke
-            d_result[date_str] = (c, vol, mc)
-
-        return d_result
-
-    except Exception as e:
-        logging.error(f"[CMC ERROR] {cmc_id} => {e}")
-        return d_result
-
-
-def fetch_lunar_history(symbol):
-    """
-    Récupère l'historique ~30 jours (bucket=day, interval=1m) sur LunarCrush
-    => dict date_str => (galaxy_score, alt_rank, sentiment).
-    """
-    base_url = f"https://lunarcrush.com/api4/public/coins/{symbol}/time-series/v2"
+    # Paramètres : bucket=day, interval=1y => ~ 365 jours
+    # On ne précise pas "start" ou "end", c’est l’API qui gère l’interval=1y
     params = {
         "key": LUNAR_API_KEY,
         "bucket": "day",
-        "interval": "1m"
+        "interval": "1y"
     }
 
-    out = {}
     try:
-        r = requests.get(base_url, params=params, timeout=25)
-        logging.info(f"[LUNAR] symbol={symbol}, status={r.status_code}")
+        r = requests.get(url, params=params, timeout=30)
+        logging.info(f"[LUNAR] symbol={symbol}, status_code={r.status_code}")
+
         if r.status_code != 200:
-            logging.warning(f"[LUNAR WARN] {symbol} => HTTP {r.status_code}")
-            return out
+            logging.warning(f"[LUNAR WARNING] symbol={symbol} => HTTP={r.status_code}, skip.")
+            return None
 
-        data_j = r.json()
-        if ("data" not in data_j) or (not data_j["data"]):
-            logging.warning(f"[LUNAR WARN] {symbol} => data vide.")
-            return out
+        j = r.json()
+        if "data" not in j or not j["data"]:
+            logging.warning(f"[LUNAR WARNING] symbol={symbol} => pas de data => skip.")
+            return None
 
-        for row in data_j["data"]:
-            epoch = row.get("time")
-            if not epoch:
+        rows = []
+        for point in j["data"]:
+            # point est un dict, ex.:
+            # {
+            #   "time": 1734912000,
+            #   "open": 3252.28,
+            #   "close": 3252.28,
+            #   "high": 3252.28,
+            #   "low": 3248.85,
+            #   "volume_24h": 24854088734.3,
+            #   "market_cap": 391793759443.76,
+            #   "market_dominance": 11.954,
+            #   "circulating_supply": 120455304.54,
+            #   "sentiment": 82,
+            #   "spam": 234,
+            #   "galaxy_score": 64,
+            #   "volatility": 0.02,
+            #   "alt_rank": 701,
+            #   "contributors_active": 12054,
+            #   "contributors_created": 407,
+            #   "posts_active": 22115,
+            #   "posts_created": 571,
+            #   "interactions": 2644033,
+            #   "social_dominance": 8.348
+            # }
+            unix_ts = point.get("time")
+            if not unix_ts:
                 continue
-            dt_utc = datetime.utcfromtimestamp(epoch)
-            date_str = dt_utc.strftime("%Y-%m-%d")
+            dt_utc = datetime.utcfromtimestamp(unix_ts)
 
-            gal = row.get("galaxy_score")    # ex. 75
-            alt = row.get("alt_rank")        # ex. 200
-            senti = row.get("sentiment")     # ex. 60
+            # On lit toutes les métriques
+            o = point.get("open", None)
+            c = point.get("close", None)
+            h = point.get("high", None)
+            lo = point.get("low", None)
+            vol_24 = point.get("volume_24h", None)
+            mc = point.get("market_cap", None)
+            md = point.get("market_dominance", None)
+            cs = point.get("circulating_supply", None)
+            senti = point.get("sentiment", None)
+            spam_ = point.get("spam", None)
+            gs = point.get("galaxy_score", None)
+            volat = point.get("volatility", None)
+            alt_r = point.get("alt_rank", None)
+            contrib_act = point.get("contributors_active", None)
+            contrib_creat = point.get("contributors_created", None)
+            posts_act = point.get("posts_active", None)
+            posts_creat = point.get("posts_created", None)
+            inter = point.get("interactions", None)
+            soc_dom = point.get("social_dominance", None)
 
-            out[date_str] = (gal, alt, senti)
-        return out
+            rows.append([
+                dt_utc, o, c, h, lo, vol_24, mc, md, cs,
+                senti, spam_, gs, volat, alt_r,
+                contrib_act, contrib_creat, posts_act, posts_creat, inter, soc_dom
+            ])
+
+        if not rows:
+            logging.warning(f"[LUNAR WARNING] symbol={symbol} => rows empty after parse.")
+            return None
+
+        df = pd.DataFrame(rows, columns=[
+            "date", "open", "close", "high", "low", "volume_24h", "market_cap",
+            "market_dominance", "circulating_supply", "sentiment", "spam",
+            "galaxy_score", "volatility", "alt_rank",
+            "contributors_active", "contributors_created",
+            "posts_active", "posts_created", "interactions", "social_dominance"
+        ])
+
+        df.sort_values("date", inplace=True)
+        df.reset_index(drop=True, inplace=True)
+        return df
+
     except Exception as e:
-        logging.error(f"[LUNAR ERROR] {symbol} => {e}")
-        return out
+        logging.error(f"[LUNAR ERROR] symbol={symbol} => {e}")
+        return None
 
 
-def compute_label_column(df):
+def compute_label(df: pd.DataFrame, shift_days=2, threshold=0.30) -> pd.DataFrame:
     """
-    SHIFT_DAYS=2 => on regarde la variation (close J+2 - close J)/close J
-    label=1 si >= THRESHOLD, 0 sinon, ou None si close manquant.
+    Calcule un label binaire : label=1 si la hausse (close D+shift_days - close D)/close D >= threshold
+    Sinon 0. Si le close D+2 n’existe pas, la valeur label reste NaN (puis on pourra drop ou laisser).
     """
     df = df.sort_values("date").reset_index(drop=True)
-    prices = df["close"].tolist()
-    labels = []
+    # On vérifie qu’on a bien la colonne 'close'
+    if "close" not in df.columns:
+        df["label"] = None
+        return df
 
-    for i in range(len(prices)):
-        if i + SHIFT_DAYS >= len(prices):
-            labels.append(None)
-            continue
-        c0 = prices[i]
-        c2 = prices[i + SHIFT_DAYS]
-        if (c0 is None) or (c2 is None):
-            labels.append(None)
-            continue
-        var_2d = (c2 - c0) / c0
-        lab = 1 if var_2d >= THRESHOLD else 0
-        labels.append(lab)
+    df["future_close"] = df["close"].shift(-shift_days)
+    df["variation"] = (df["future_close"] - df["close"]) / df["close"]
+    df["label"] = (df["variation"] >= threshold).astype(float)
 
-    df["label"] = labels
     return df
 
 
 def main():
-    logging.info("=== build_csv => Start for 4 tokens ===")
-
-    # On construit une liste de 30 dates (J-29..J)
-    date_list = build_date_range(DAYS)
-    date_strs = [dt.strftime("%Y-%m-%d") for dt in date_list]
+    logging.info("=== build_csv_lunar_only => collecting data for tokens (lunar only) ===")
 
     all_dfs = []
+    nb_tokens = len(TOKENS)
 
-    for idx, tk in enumerate(TOKENS, start=1):
+    for i, tk in enumerate(TOKENS, start=1):
         sym = tk["symbol"]
-        cmc_id = tk["cmc_id"]
-        lunar_sym = tk["lunar_symbol"]
-        logging.info(f"Token {idx}/{len(TOKENS)} => {sym}, cmc_id={cmc_id}, lunar={lunar_sym}")
+        logging.info(f"[{i}/{nb_tokens}] Fetching LunarCrush data for {sym} ...")
 
-        # 1) Récup CMC
-        cmc_map = fetch_cmc_history(cmc_id, DAYS)  # dict date_str->(c, vol, mc)
-        logging.info(f"[{sym}] cmc_map => {len(cmc_map)} data points")
+        df_lunar = fetch_lunar_data(sym)
+        if df_lunar is None or df_lunar.empty:
+            logging.warning(f"No valid data for {sym} => skip.")
+            continue
 
-        # 2) Récup LunarCrush
-        lunar_map = fetch_lunar_history(lunar_sym)  # dict date_str->(gal, alt, senti)
-        logging.info(f"[{sym}] lunar_map => {len(lunar_map)} data points")
+        # Calcul du label
+        df_lunar = compute_label(df_lunar, SHIFT_DAYS, THRESHOLD)
+        df_lunar["symbol"] = sym
 
-        # 3) Construire un DataFrame day par day
-        rows = []
-        for d_str in date_strs:
-            c = None
-            v = None
-            mc = None
-            gal = None
-            alt_r = None
-            senti = None
+        # On enlève les lignes dont label est NaN (pas de data +2 jours) si on veut un CSV “final”
+        # => On laisse quand même la possibilité de conserver : à votre choix
+        df_lunar.dropna(subset=["label"], inplace=True)
 
-            if d_str in cmc_map:
-                c, v, mc = cmc_map[d_str]
+        all_dfs.append(df_lunar)
+        # Pour éviter l’erreur 429 de LunarCrush si on a beaucoup de tokens
+        time.sleep(SLEEP_BETWEEN_TOKENS)
 
-            if d_str in lunar_map:
-                gal, alt_r, senti = lunar_map[d_str]
-
-            rows.append({
-                "date_str": d_str,
-                "close": c,
-                "volume": v,
-                "market_cap": mc,
-                "galaxy_score": gal,
-                "alt_rank": alt_r,
-                "sentiment": senti
-            })
-
-        df_token = pd.DataFrame(rows)
-        df_token["date"] = pd.to_datetime(df_token["date_str"], format="%Y-%m-%d")
-        df_token.drop(columns=["date_str"], inplace=True)
-
-        df_token.sort_values("date", inplace=True)
-        df_token.reset_index(drop=True, inplace=True)
-
-        # 4) label
-        df_token = compute_label_column(df_token)
-
-        # 5) Ajoute la colonne token
-        df_token["token"] = sym
-
-        # 6) On réordonne
-        col_order = [
-            "token",
-            "date",
-            "close",
-            "volume",
-            "market_cap",
-            "galaxy_score",
-            "alt_rank",
-            "sentiment",
-            "label"
-        ]
-        df_token = df_token[col_order]
-
-        all_dfs.append(df_token)
-
-        # On attend 6s pour éviter trop de hits (~10 req/min sur LunarCrush)
-        time.sleep(PAUSE_SECONDS)
-
-    # Concat final
     if not all_dfs:
-        logging.warning("No data => no CSV")
-        print("No data => no CSV.")
+        logging.warning("No data => no CSV.")
+        print("No data => no CSV. Check logs.")
         return
 
+    # Concatène tout
     df_final = pd.concat(all_dfs, ignore_index=True)
-    df_final.sort_values(["token","date"], inplace=True)
+    df_final.sort_values(["symbol","date"], inplace=True)
     df_final.reset_index(drop=True, inplace=True)
 
-    # Export
+    # Exporte
     df_final.to_csv(OUTPUT_CSV, index=False)
-    nb_lines = len(df_final)
-    print(f"Export => {OUTPUT_CSV} ({nb_lines} lignes)")
-    logging.info(f"Export => {OUTPUT_CSV} => {nb_lines} lignes")
+    logging.info(f"Export => {OUTPUT_CSV} => {len(df_final)} lignes.")
+    print(f"Export => {OUTPUT_CSV} ({len(df_final)} lignes)")
+
+    logging.info("=== DONE build_csv ===")
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
