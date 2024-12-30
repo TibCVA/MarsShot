@@ -24,6 +24,10 @@ THRESHOLD = 0.30
 OUTPUT_CSV = "training_data.csv"
 LOG_FILE = "build_csv.log"
 
+# Pour ne pas bloquer tout le process, on fixe un LOT_SIZE = 30
+LOT_SIZE = 30
+SLEEP_BETWEEN_LOTS = 60  # 60 secondes
+
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
@@ -756,10 +760,16 @@ TOKENS = [
 #####################################
 # FONCTIONS
 #####################################
-def fetch_cmc_history(cmc_id, days=30):
+def fetch_ohlcv_history(cmc_id, days=30):
+    """
+    Récupère l'historique OHLCV d'un token via /v2/cryptocurrency/ohlcv/historical
+    Retourne un DataFrame [date, open, high, low, close, volume, market_cap]
+    ou None si échec.
+    """
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=days)
-    url = "https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/historical"
+
+    url = "https://pro-api.coinmarketcap.com/v2/cryptocurrency/ohlcv/historical"
     headers = {
         "X-CMC_PRO_API_KEY": CMC_API_KEY,
         "Accepts": "application/json"
@@ -773,30 +783,33 @@ def fetch_cmc_history(cmc_id, days=30):
         "convert": "USD"
     }
 
-    # -- NOUVEAU LOG DEBUG : URL, params, cmc_id
-    logging.info(f"[CMC DEBUG] Trying cmc_id={cmc_id}, url={url}, params={params}")
+    logging.info(f"[CMC-DEBUG] fetch_ohlcv => cmc_id={cmc_id}, url={url}, params={params}")
 
     try:
         r = requests.get(url, headers=headers, params=params)
-
-        # -- LOG du status code
-        logging.info(f"[CMC DEBUG] cmc_id={cmc_id} status_code={r.status_code}")
-
-        # -- LOG un extrait de la réponse JSON (ex: 500 premières caractères)
+        logging.info(f"[CMC-DEBUG] cmc_id={cmc_id} status_code={r.status_code}")
         txt_excerpt = r.text[:500].replace("\n"," ")
-        logging.info(f"[CMC DEBUG] response excerpt for cmc_id={cmc_id}: {txt_excerpt}")
+        logging.info(f"[CMC-DEBUG] cmc_id={cmc_id} response excerpt={txt_excerpt}")
+
+        if r.status_code != 200:
+            logging.warning(f"[CMC-WARN] cmc_id={cmc_id} HTTP {r.status_code}")
+            return None
 
         j = r.json()
-        if "data" not in j or not j["data"]:
+        if ("data" not in j) or not j["data"]:
             return None
-        quotes = j["data"]["quotes"]
+        # structure: j["data"] => { "id":..., "name":..., "quotes": [ { "time_open":..., "time_close":..., "quote": { "USD": {"open":..., ...} } } ] }
+        quotes = j["data"].get("quotes", [])
         if not quotes:
             return None
 
         rows = []
         for q in quotes:
-            t = q["timestamp"]
-            dd = datetime.fromisoformat(t.replace("Z",""))
+            # On peut prendre time_close comme "date"
+            tclose = q.get("time_close", None)  # ex: "2024-12-01T23:59:59.999Z"
+            if not tclose:
+                continue
+            dd = datetime.fromisoformat(tclose.replace("Z",""))
             usd = q["quote"].get("USD", {})
             o = usd.get("open", None)
             h = usd.get("high", None)
@@ -806,20 +819,26 @@ def fetch_cmc_history(cmc_id, days=30):
             mc = usd.get("market_cap", None)
 
             if (o is None) or (h is None) or (lo is None) or (c is None):
+                # skip cette ligne
                 continue
 
             rows.append([dd, o, h, lo, c, vol, mc])
+
+        if not rows:
+            return None
 
         df = pd.DataFrame(rows, columns=["date","open","high","low","close","volume","market_cap"])
         df.sort_values("date", inplace=True)
         df.reset_index(drop=True, inplace=True)
         return df
-
     except Exception as e:
-        logging.error(f"[CMC ERROR] {cmc_id} => {e}")
+        logging.error(f"[CMC ERROR] cmc_id={cmc_id} => {e}")
         return None
 
 def fetch_nansen_holders(chain, contract):
+    """
+    Récupère le nombre de holders via Nansen, ou 0 si pb.
+    """
     if not chain or not contract:
         return 0
     url = f"https://api.nansen.ai/tokens/{chain}/{contract}/holders"
@@ -827,13 +846,16 @@ def fetch_nansen_holders(chain, contract):
     try:
         r = requests.get(url, headers=headers)
         j = r.json()
-        if "data" in j and "holders" in j["data"]:
+        if ("data" in j) and ("holders" in j["data"]):
             return j["data"]["holders"]
         return 0
     except:
         return 0
 
 def fetch_lunar_sentiment(symbol):
+    """
+    Récupère un score [0..1], ou 0.5 si on a un souci
+    """
     if not symbol:
         return 0.5
     url = f"https://lunarcrush.com/api2?symbol={symbol}&data=market"
@@ -841,7 +863,7 @@ def fetch_lunar_sentiment(symbol):
     try:
         r = requests.get(url, headers=headers)
         j = r.json()
-        if "data" not in j or not j["data"]:
+        if ("data" not in j) or (not j["data"]):
             return 0.5
         dd = j["data"][0]
         sc = dd.get("social_score", 50)
@@ -854,55 +876,87 @@ def fetch_lunar_sentiment(symbol):
         return 0.5
 
 def build_token_df(token):
+    """
+    Pour 1 token, on fetch OHLCV, on y ajoute holders + sentiment
+    et on calcule la 'label'.
+    """
     sym = token["symbol"]
     cmc_id = token["cmc_id"]
     chain = token["chain"]
     contract = token["contract"]
     lunar = token["lunar_symbol"]
 
-    df_cmc = fetch_cmc_history(cmc_id, DAYS)
-    if df_cmc is None or df_cmc.empty:
-        logging.warning(f"No data for {sym}")
+    df_ohlcv = fetch_ohlcv_history(cmc_id, DAYS)
+    if df_ohlcv is None or df_ohlcv.empty:
+        logging.warning(f"No data for {sym} => skip.")
         return None
 
-    df_cmc["token"] = sym
+    df_ohlcv["token"] = sym
 
     h = fetch_nansen_holders(chain, contract)
     s = fetch_lunar_sentiment(lunar)
 
-    df_cmc["holders"] = h
-    df_cmc["sentiment_score"] = s
-    return df_cmc
+    df_ohlcv["holders"] = h
+    df_ohlcv["sentiment_score"] = s
+
+    # Compute label
+    df_ohlcv = compute_label(df_ohlcv)
+    return df_ohlcv
 
 def compute_label(df):
+    """
+    SHIFT_DAYS=2 => on regarde le close 2 jours plus tard.
+    label=1 si variation >= THRESHOLD=0.30, sinon 0
+    """
     df = df.sort_values("date").reset_index(drop=True)
     df["price_future"] = df["close"].shift(-SHIFT_DAYS)
     df["variation_2d"] = (df["price_future"] - df["close"]) / df["close"]
-    df["label"] = (df["variation_2d"]>=THRESHOLD).astype(int)
+    df["label"] = (df["variation_2d"] >= THRESHOLD).astype(int)
     return df
 
 def main():
     logging.info("=== build_csv => collecting data for 102 tokens ===")
     all_dfs = []
-    for t in TOKENS:
-        sym = t["symbol"]
-        logging.info(f"... fetching {sym}")
-        df_ = build_token_df(t)
-        if df_ is None or df_.empty:
-            continue
-        df_ = compute_label(df_)
-        all_dfs.append(df_)
-        time.sleep(2)
+
+    total_tokens = len(TOKENS)
+    # On va itérer en lot de 30
+    cpt = 0
+    for i, tk in enumerate(TOKENS, start=1):
+        sym = tk["symbol"]
+        logging.info(f"Fetching token {i}/{total_tokens}: {sym}")
+
+        df_ = build_token_df(tk)
+        if (df_ is not None) and (not df_.empty):
+            all_dfs.append(df_)
+
+        cpt += 1
+        # toutes les 30 requêtes, on attend 60s
+        if (cpt % LOT_SIZE) == 0 and (i < total_tokens):
+            logging.info(f"... Wait {SLEEP_BETWEEN_LOTS}s to avoid 429 rate-limit ...")
+            time.sleep(SLEEP_BETWEEN_LOTS)
+        else:
+            time.sleep(2)  # petit sleep de 2s entre tokens
 
     if not all_dfs:
         logging.warning("No data => no CSV.")
         return
+
     df_all = pd.concat(all_dfs, ignore_index=True)
     df_all = df_all.sort_values(["token","date"]).reset_index(drop=True)
 
+    # On retire les lignes dont la label est NaN
     df_all.dropna(subset=["label"], inplace=True)
 
-    final = df_all[["token","date","close","volume","market_cap","holders","sentiment_score","label"]].copy()
+    final = df_all[[
+        "token",
+        "date",
+        "close",
+        "volume",
+        "market_cap",
+        "holders",
+        "sentiment_score",
+        "label"
+    ]].copy()
     final.rename(columns={"close":"price"}, inplace=True)
 
     final.to_csv(OUTPUT_CSV, index=False)
