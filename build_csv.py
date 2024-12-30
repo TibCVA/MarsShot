@@ -40,14 +40,14 @@ TOKENS = [
         "lunar_symbol": "SOLVEX"
     },
     {
-        "symbol": "PATRIOT",
-        "cmc_id": 2988,
-        "lunar_symbol": "PATRIOT"
+        "symbol": "ETH",
+        "cmc_id": 1027,
+        "lunar_symbol": "ETH"
     },
     {
-        "symbol": "FAI",
-        "cmc_id": 28885,
-        "lunar_symbol": "FAI"
+        "symbol": "LINK",
+        "cmc_id": 1975,
+        "lunar_symbol": "LINK"
     },
     {
         "symbol": "MOEW",
