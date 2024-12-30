@@ -2,34 +2,32 @@ name: Build CSV
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ "main" ]
 
 jobs:
-  build-and-run:
+  build_and_run:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v3
 
-    - name: Set up Python
+    - name: Setup Python
       uses: actions/setup-python@v4
       with:
-        python-version: "3.10"
+        python-version: '3.10'
 
-    - name: Install dependencies
+    - name: Install Dependencies
       run: |
         pip install requests pandas
 
     - name: Run build_csv
-      run: python build_csv.py
-
-    - name: Show CSV head
       run: |
-        echo "===== CSV HEAD ====="
+        python build_csv.py
+
+    - name: Show CSV
+      run: |
+        echo "===== HEAD of CSV ====="
         head training_data.csv || echo "No CSV found."
 
-    - name: Upload artifact
+    - name: Upload CSV
       uses: actions/upload-artifact@v3
       with:
         name: training_data_csv
