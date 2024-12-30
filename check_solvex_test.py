@@ -3,15 +3,14 @@
 
 """
 Script de test Nansen & LunarCrush pour 3 tokens: SOLVEX, ETH, LINK
-Objectif:
-  - Vérifier holders (Nansen) et social_score (LunarCrush)
-  - Loguer toutes les infos utiles pour debugger
+Log file => check_solvex_test.log
 """
 
 import requests
 import logging
 import time
 import sys
+import os
 
 #####################################
 # 1) Clés API
@@ -20,18 +19,26 @@ NANSEN_API_KEY = "QOkxEu97HMywRodE4747YpwVsivO690Fl6arVXoe"
 LUNAR_API_KEY = "85zhfo9yl9co22cl7kw2sucossm59awchvwf8s8ub"
 
 #####################################
-# 2) Configuration du logging
+# 2) Nom du fichier de log
 #####################################
-LOG_FILE = "check_solvex_eth_link.log"
+LOG_FILE = "check_solvex_test.log"
+
+#####################################
+# 3) Configuration du logging
+#####################################
+# On force la création du fichier en l’ouvrant en mode "w" une première fois.
+with open(LOG_FILE, "w", encoding="utf-8") as ff:
+    ff.write("Initialisation du log.\n")
+
 logging.basicConfig(
     filename=LOG_FILE,
-    filemode="w",  # on écrase à chaque run
+    filemode="a",  # on append après avoir créé le fichier
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
 #####################################
-# 3) Liste des tokens
+# 4) Liste des tokens
 #####################################
 TOKENS = [
     {
@@ -44,7 +51,7 @@ TOKENS = [
     {
         "name": "Ethereum",
         "symbol": "ETH",
-        "chain": None,  # pas de holders tracké sur Nansen pour le token natif
+        "chain": None,  # natif => pas de contract
         "contract": None,
         "lunar_symbol": "ETH"
     },
@@ -52,27 +59,22 @@ TOKENS = [
         "name": "Chainlink",
         "symbol": "LINK",
         "chain": "eth",
-        "contract": "0x514910771AF9Ca656af840dff83E8264EcF986CA",  # Contrat ERC-20 officiel
+        "contract": "0x514910771AF9Ca656af840dff83E8264EcF986CA",
         "lunar_symbol": "LINK"
     }
 ]
 
 #####################################
-# 4) Fonctions de test
+# 5) Fonctions
 #####################################
 def test_nansen_holders(chain, contract):
     """
     Récupère le nombre de holders depuis Nansen.
-    Si chain=None ou contract=None => renvoie 0 directement.
-    Logue:
-      - URL
-      - status_code
-      - excerpt
-    Retourne (status_code, holders_count, excerpt)
+    Retourne (status_code, holders_count, excerpt).
     """
     if not chain or not contract:
-        logging.info("[NANSEN] chain/contract manquants => return 0 holders")
-        return (None, 0, "no chain/contract => no call")
+        logging.info("[NANSEN] chain/contract manquants => 0 holders")
+        return (None, 0, "no chain/contract => skip")
 
     url = f"https://api.nansen.ai/tokens/{chain}/{contract}/holders"
     headers = {"X-API-KEY": NANSEN_API_KEY}
@@ -84,7 +86,7 @@ def test_nansen_holders(chain, contract):
         excerpt = r.text[:300].replace("\n"," ")
         logging.info(f"[NANSEN] status_code={sc}, excerpt={excerpt}")
         if sc != 200:
-            logging.warning(f"[NANSEN] HTTP {sc}, pas de holders.")
+            logging.warning(f"[NANSEN] HTTP {sc} => holders=0")
             return (sc, 0, excerpt)
 
         j = r.json()
@@ -97,12 +99,8 @@ def test_nansen_holders(chain, contract):
 
 def test_lunar_sentiment(symbol):
     """
-    Récupère le social_score pour 'symbol' via LunarCrush.
-    Logue:
-      - url
-      - status_code
-      - excerpt
-    Retourne (status_code, social_score, excerpt)
+    Récupère le social_score sur [0..1], ou 0.5 si pb.
+    Retourne (status_code, score, excerpt).
     """
     url = f"https://lunarcrush.com/api2?symbol={symbol}&data=market"
     headers = {"Authorization": f"Bearer {LUNAR_API_KEY}"}
@@ -115,19 +113,18 @@ def test_lunar_sentiment(symbol):
         logging.info(f"[LUNAR] status_code={sc}, excerpt={excerpt}")
 
         if sc != 200:
-            logging.warning(f"[LUNAR] HTTP {sc}, on renvoie 0.5 par défaut")
+            logging.warning(f"[LUNAR] HTTP {sc} => sentiment=0.5")
             return (sc, 0.5, excerpt)
 
         j = r.json()
         if ("data" not in j) or (not j["data"]):
-            logging.warning("[LUNAR] 'data' vide => return 0.5")
+            logging.warning("[LUNAR] data vide => sentiment=0.5")
             return (sc, 0.5, excerpt)
 
         dd = j["data"][0]
         sc_val = dd.get("social_score", 50)
-        # on normalise en [0..1]
         maxi = max(sc_val, 100)
-        val = sc_val / maxi
+        val = sc_val/maxi
         if val>1:
             val=1
         return (sc, val, excerpt)
@@ -137,32 +134,29 @@ def test_lunar_sentiment(symbol):
         return (None, 0.5, f"Exception: {e}")
 
 #####################################
-# 5) main
+# 6) main
 #####################################
 def main():
-    logging.info("=== START check_solvex_eth_link ===")
+    logging.info("=== START check_solvex_test ===")
 
     for t in TOKENS:
         name = t["name"]
         symbol = t["symbol"]
         chain = t["chain"]
         contract = t["contract"]
-        lunar_sym = t["lunar_symbol"]
+        lun_sym = t["lunar_symbol"]
 
         logging.info(f"--- TOKEN {name} ({symbol}) ---")
-
-        # 1) Nansen
+        # Nansen
         st_n, holders, exc_n = test_nansen_holders(chain, contract)
-        # 2) LunarCrush
-        st_l, sentiment, exc_l = test_lunar_sentiment(lunar_sym)
+        # Lunar
+        st_l, sentiment, exc_l = test_lunar_sentiment(lun_sym)
 
-        # On print aussi en console pour un retour direct
-        print(f"{name} ({symbol}) => holders={holders}, sentiment_score={sentiment:.4f}")
-
-        # Petit sleep de 2s pour éviter 429
+        # print en console
+        print(f"{name} [{symbol}] => holders={holders}, sentiment={sentiment:.4f}")
         time.sleep(2)
 
-    logging.info("=== END check_solvex_eth_link ===")
+    logging.info("=== END check_solvex_test ===")
 
 if __name__=="__main__":
     main()
