@@ -9,43 +9,61 @@ def compute_rsi_macd_atr(df):
     """
     Calcule RSI(14), MACD(12,26,9) et ATR(14) sur df=[date, open, high, low, close, volume, ...].
     
-    Approche très stricte :
-      - Si l'une de (open, high, low, close) est 0 ou NaN => on considère que cette ligne n'a pas
-        de données valables => on force open=high=low=close=NaN.
-      - On convertit ensuite volume aussi en float, mais on ne force pas volume=NaN si =0. 
-        (Le volume peut légitimement être 0, ou absent, selon vos besoins.)
-      - Sur ces lignes, la librairie `ta` ne calculera pas d'indicateurs. 
-      
-    Ceci évite un RSI=100 dans les cas où la ligne n'est pas réellement exploitable.
+    Stratégie :
+      1) Convertir open/high/low/close/volume en float (éventuels "0" => 0.0).
+      2) Pour chaque ligne, si open/high/low/close == 0 ou NaN => on force ces 4 colonnes à NaN.
+         (On considère qu'il n'y a pas de données exploitables ce jour-là pour le prix.)
+      3) On retire ensuite physiquement ces lignes du DataFrame (dropna sur open, high, low, close),
+         de sorte que ta ne calculera pas d'indicateurs sur des valeurs fantaisistes.
+      4) On calcule RSI(14), macd_diff, et ATR(14).
+      5) On renvoie le DataFrame final (avec de nouvelles colonnes : 'rsi', 'macd', 'atr').
+
+    Objectif : Éviter que ta calcule un RSI=100 (ou 0) sur des lignes vides.
     """
 
     # Copie pour ne pas altérer df directement
     dff = df.copy()
 
-    # Convertir "open/high/low/close/volume" en float
+    # Convertir en float
     for col in ["open", "high", "low", "close", "volume"]:
         dff[col] = pd.to_numeric(dff[col], errors="coerce")
 
-    # 1) Identifier les lignes "invalides" => mask si l'une de open/high/low/close == 0 ou est NaN
-    #   any_zero_mask = (open==0) OR (high==0) OR (low==0) OR (close==0)
-    #   ou tout simplement, si min(...) == 0 -> c'est qu'au moins un vaut 0
-    #   + si un est NaN => row invalid => handle via min( ) ?
-    #   => plus simple: on check individuellement
-    any_zero_or_nan_mask = (
-        (dff["open"].isna() | (dff["open"] == 0)) |
-        (dff["high"].isna() | (dff["high"] == 0)) |
-        (dff["low"].isna()  | (dff["low"]  == 0)) |
-        (dff["close"].isna()| (dff["close"]== 0))
+    # Étape 2) Masque booléen : True si l'une des 4 colonnes (open,high,low,close) est 0 ou NaN
+    # On le décompose en 2 sous-masques pour plus de clarté
+    zero_mask = (
+        (dff["open"] == 0) |
+        (dff["high"] == 0) |
+        (dff["low"]  == 0) |
+        (dff["close"]== 0)
     )
 
-    # Sur ces lignes, on met open/high/low/close=NaN => la librairie ta les ignorera
-    dff.loc[any_zero_or_nan_mask, ["open","high","low","close"]] = np.nan
+    nan_mask = (
+        dff["open"].isna() |
+        dff["high"].isna() |
+        dff["low"].isna()  |
+        dff["close"].isna()
+    )
 
-    # 2) Calcul du RSI (sur 14 jours)
+    # Masque final
+    any_zero_or_nan = zero_mask | nan_mask
+
+    # Sur ces lignes, on force open/high/low/close à NaN
+    dff.loc[any_zero_or_nan, ["open", "high", "low", "close"]] = np.nan
+
+    # Étape 3) On retire maintenant physiquement toutes ces lignes (any => si l'une des 4 colonnes est NaN)
+    dff.dropna(subset=["open","high","low","close"], how="any", inplace=True)
+
+    # Si tout est parti, on peut retourner directement
+    if dff.empty:
+        # On retourne le df vide, ou éventuellement on recrée quand même la structure attendue
+        # mais par cohérence on renvoie dff qui est vide => l'appelant gérera
+        return dff
+
+    # Étape 4) Calcul du RSI(14)
     rsi_ind = ta.momentum.RSIIndicator(dff["close"], window=14)
     dff["rsi"] = rsi_ind.rsi()
 
-    # 3) Calcul du MACD (macd_diff)
+    # MACD => on stocke macd_diff
     macd_ind = ta.trend.MACD(
         close=dff["close"],
         window_slow=26,
@@ -54,7 +72,7 @@ def compute_rsi_macd_atr(df):
     )
     dff["macd"] = macd_ind.macd_diff()
 
-    # 4) Calcul du ATR(14)
+    # ATR(14)
     atr_ind = ta.volatility.AverageTrueRange(
         high=dff["high"],
         low=dff["low"],
