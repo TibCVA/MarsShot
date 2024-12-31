@@ -8,42 +8,44 @@ import ta
 def compute_rsi_macd_atr(df):
     """
     Calcule RSI(14), MACD(12,26,9) et ATR(14) sur df=[date, open, high, low, close, volume, ...].
-    Ici, TOUTES les valeurs = 0 dans open/high/low/close sont considérées comme « pas de donnée »,
-    donc transformées en NaN avant le calcul des indicateurs.
-
-    Colonnes de sortie créées :
-      - df["rsi"]
-      - df["macd"]
-      - df["atr"]
-
-    Remarque :
-      Si vous souhaitez imposer un RSI=0 pour les lignes avec close=0, dé-commentez le bloc à la fin.
+    
+    Approche très stricte :
+      - Si l'une de (open, high, low, close) est 0 ou NaN => on considère que cette ligne n'a pas
+        de données valables => on force open=high=low=close=NaN.
+      - On convertit ensuite volume aussi en float, mais on ne force pas volume=NaN si =0. 
+        (Le volume peut légitimement être 0, ou absent, selon vos besoins.)
+      - Sur ces lignes, la librairie `ta` ne calculera pas d'indicateurs. 
+      
+    Ceci évite un RSI=100 dans les cas où la ligne n'est pas réellement exploitable.
     """
 
-    # Copie pour ne pas modifier l'original
+    # Copie pour ne pas altérer df directement
     dff = df.copy()
 
     # Convertir "open/high/low/close/volume" en float
     for col in ["open", "high", "low", "close", "volume"]:
         dff[col] = pd.to_numeric(dff[col], errors="coerce")
 
-    # Identifier où close=0 => c'est un "pas de donnée"
-    mask_zero = (dff["close"] == 0) | (dff["close"].isna())
-    # On applique la même logique aux colonnes open/high/low
-    # Car s'il n'y a pas de close, souvent open/high/low sont 0 => pas de donnée
-    for col in ["open","high","low"]:
-        # Si la valeur =0, on la met en NaN
-        zero_mask_col = (dff[col] == 0) | (dff[col].isna())
-        dff.loc[zero_mask_col, col] = np.nan
+    # 1) Identifier les lignes "invalides" => mask si l'une de open/high/low/close == 0 ou est NaN
+    #   any_zero_mask = (open==0) OR (high==0) OR (low==0) OR (close==0)
+    #   ou tout simplement, si min(...) == 0 -> c'est qu'au moins un vaut 0
+    #   + si un est NaN => row invalid => handle via min( ) ?
+    #   => plus simple: on check individuellement
+    any_zero_or_nan_mask = (
+        (dff["open"].isna() | (dff["open"] == 0)) |
+        (dff["high"].isna() | (dff["high"] == 0)) |
+        (dff["low"].isna()  | (dff["low"]  == 0)) |
+        (dff["close"].isna()| (dff["close"]== 0))
+    )
 
-    # On met close=NaN aussi quand c'est 0
-    dff.loc[mask_zero, "close"] = np.nan
+    # Sur ces lignes, on met open/high/low/close=NaN => la librairie ta les ignorera
+    dff.loc[any_zero_or_nan_mask, ["open","high","low","close"]] = np.nan
 
-    # Calcul du RSI
+    # 2) Calcul du RSI (sur 14 jours)
     rsi_ind = ta.momentum.RSIIndicator(dff["close"], window=14)
     dff["rsi"] = rsi_ind.rsi()
 
-    # Calcul du MACD (diff)
+    # 3) Calcul du MACD (macd_diff)
     macd_ind = ta.trend.MACD(
         close=dff["close"],
         window_slow=26,
@@ -52,7 +54,7 @@ def compute_rsi_macd_atr(df):
     )
     dff["macd"] = macd_ind.macd_diff()
 
-    # Calcul du ATR
+    # 4) Calcul du ATR(14)
     atr_ind = ta.volatility.AverageTrueRange(
         high=dff["high"],
         low=dff["low"],
@@ -60,9 +62,5 @@ def compute_rsi_macd_atr(df):
         window=14
     )
     dff["atr"] = atr_ind.average_true_range()
-
-    # Optionnel : si vous voulez imposer RSI=0 sur les lignes où close=NaN (i.e. où close=0 initialement),
-    # dé-commentez la ligne ci-dessous :
-    # dff.loc[mask_zero, "rsi"] = 0.0
 
     return dff
