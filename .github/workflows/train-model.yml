@@ -1,0 +1,38 @@
+name: Train Model
+
+on:
+  workflow_dispatch:
+
+jobs:
+  train_and_save:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install requests pandas scikit-learn joblib ta
+
+      - name: Ensure CSV exists
+        run: |
+          ls -l training_data.csv || echo "No CSV found"
+
+      - name: Train Model
+        run: |
+          python train_model.py
+
+      - name: Show Logs
+        run: |
+          echo "===== TRAIN LOGS ====="
+          cat train_model.log || echo "No log found."
+
+      - name: Upload Model
+        uses: actions/upload-artifact@v3
+        with:
+          name: model_pkl
+          path: model.pkl
