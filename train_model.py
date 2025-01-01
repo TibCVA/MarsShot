@@ -68,7 +68,7 @@ def main():
     #    On prend un exemple : close, volume, market_cap, variation, galaxy_score,
     #    alt_rank, sentiment, rsi, macd, atr
     features = [
-        "close", "volume", "market_cap", "variation",
+        "close", "volume", "market_cap",
         "galaxy_score", "alt_rank", "sentiment",
         "rsi", "macd", "atr"
     ]
