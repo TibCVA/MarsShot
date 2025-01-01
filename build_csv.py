@@ -18,7 +18,7 @@ from indicators import compute_rsi_macd_atr
 
 LUNAR_API_KEY = "85zhfo9yl9co22cl7kw2sucossm59awchvwf8s8ub"
 
-# SHIFT_DAYS => label (variat° 2 jours)
+# SHIFT_DAYS => label (hausse sur 2 jours)
 SHIFT_DAYS = 2
 # THRESHOLD => 30% de hausse => label=1
 THRESHOLD = 0.30
@@ -112,14 +112,15 @@ def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
     Récupère l'historique daily (ou potentiellement + d'un point par jour)
     via l'endpoint v2 de LunarCrush:
       GET /api4/public/coins/<symbol>/time-series/v2
-    Retourne un DataFrame (date, open, close, high, low, volume, market_cap, galaxy_score, alt_rank, sentiment)
-    ou None si échec.
+
+    Retourne un DataFrame (date, open, close, high, low, volume, market_cap,
+    galaxy_score, alt_rank, sentiment) ou None si échec.
     """
     url = f"https://lunarcrush.com/api4/public/coins/{symbol}/time-series/v2"
     params = {
         "key": LUNAR_API_KEY,
         "bucket": "day",   # param 'bucket=day'
-        "interval": "1y"   # interval sur 2 ans, par ex.
+        "interval": "2y"   # <-- On demande désormais 2 ans (au lieu d'1)
     }
 
     try:
@@ -148,6 +149,7 @@ def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
             lo = point.get("low", None)
             vol_24 = point.get("volume_24h", None)
             mc = point.get("market_cap", None)
+
             # Ajout des 3 indicateurs : galaxy_score, alt_rank, sentiment
             galaxy = point.get("galaxy_score", None)
             alt_r = point.get("alt_rank", None)
@@ -168,30 +170,10 @@ def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
         df.sort_values("date", inplace=True)
         df.reset_index(drop=True, inplace=True)
 
-        # -------------------------------------------------------------------
-        # AJOUT MINIMAL : on ne garde qu'une (ou plusieurs) heure(s) par jour
-        # Ex. SI ON NE VEUT QU'UNE LIGNE PAR JOUR => hour=12
-        #
-        #   df["hour"] = df["date"].dt.hour
-        #   df = df[df["hour"] == 12]
-        #
-        # Ex. POUR TROIS LIGNES PAR JOUR => 0h, 12h, 23h
-        #   df["hour"] = df["date"].dt.hour
-        #   df = df[df["hour"].isin([0,12,23])]
-        #
-        # Choisissez la variante souhaitée, en décommentant l'une ou l'autre:
-        # -------------------------------------------------------------------
+        # On ne conserve qu'une (ou plusieurs) heures par jour, par ex. 0h,12h,23h
         df["hour"] = df["date"].dt.hour
-
-        # => 1 relevé par jour, sur l'heure 12 :
         df = df[df["hour"].isin([0,12,23])]
-
-        # Ou => 3 relevés par jour, ex. 0h, 12h, 23h
-        #df = df[df["hour"].isin([0,12,23])]
-
         df.drop(columns=["hour"], inplace=True, errors="ignore")
-        # FIN AJOUT MINIMAL
-        # -------------------------------------------------------------------
 
         return df
 
@@ -202,7 +184,7 @@ def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
 
 def compute_label(df: pd.DataFrame, shift_days=2, threshold=0.30) -> pd.DataFrame:
     """
-    Calcule un label binaire => label=1 si +30% sur 2j
+    Calcule un label binaire => label=1 si +30% sur 2j (future_close / close - 1 >= 0.30).
     """
     df = df.sort_values("date").reset_index(drop=True)
     if "close" not in df.columns:
@@ -254,11 +236,15 @@ def main():
         print("No data => no CSV. Check logs.")
         return
 
+    # Concatène tous les DataFrames
     df_final = pd.concat(all_dfs, ignore_index=True)
     df_final.sort_values(["symbol","date"], inplace=True)
     df_final.reset_index(drop=True, inplace=True)
 
-    # Export
+    # On retire la colonne 'variation' si vous ne la désirez pas dans l'export
+    # df_final.drop(columns=["variation"], inplace=True, errors="ignore")
+
+    # Export final
     df_final.to_csv(OUTPUT_CSV, index=False)
     logging.info(f"Export => {OUTPUT_CSV} => {len(df_final)} rows")
     print(f"Export => {OUTPUT_CSV} ({len(df_final)} rows)")
