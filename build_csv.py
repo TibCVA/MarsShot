@@ -120,7 +120,7 @@ def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
     params = {
         "key": LUNAR_API_KEY,
         "bucket": "day",   # param 'bucket=day'
-        "interval": "2y"   # <-- On demande désormais 2 ans (au lieu d'1)
+        "interval": "1y"   # <-- On demande désormais 2 ans (au lieu d'1)
     }
 
     try:
