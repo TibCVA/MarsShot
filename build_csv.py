@@ -109,16 +109,17 @@ TOKENS = [
 
 def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
     """
-    Récupère l'historique daily (1 an) via l'endpoint v2 de LunarCrush:
+    Récupère l'historique daily (ou potentiellement + d'un point par jour)
+    via l'endpoint v2 de LunarCrush:
       GET /api4/public/coins/<symbol>/time-series/v2
-    Retourne un DataFrame (date, open, close, high, low, volume_24h, market_cap, etc.)
+    Retourne un DataFrame (date, open, close, high, low, volume, market_cap, etc.)
     ou None si échec.
     """
     url = f"https://lunarcrush.com/api4/public/coins/{symbol}/time-series/v2"
     params = {
         "key": LUNAR_API_KEY,
-        "bucket": "day",
-        "interval": "2y"
+        "bucket": "day",   # param 'bucket=day'
+        "interval": "2y"   # interval sur 2 ans, par ex.
     }
 
     try:
@@ -148,7 +149,6 @@ def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
             vol_24 = point.get("volume_24h", None)
             mc = point.get("market_cap", None)
 
-            # On peut récupérer d'autres champs si besoin
             rows.append([
                 dt_utc, o, c, h, lo, vol_24, mc
             ])
@@ -161,11 +161,38 @@ def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
         ])
         df.sort_values("date", inplace=True)
         df.reset_index(drop=True, inplace=True)
+
+        # -------------------------------------------------------------------
+        # AJOUT MINIMAL : on ne garde qu'une (ou plusieurs) heure(s) par jour
+        # Ex. SI ON NE VEUT QU'UNE LIGNE PAR JOUR => hour=12
+        #
+        #   df["hour"] = df["date"].dt.hour
+        #   df = df[df["hour"] == 12]
+        #
+        # Ex. POUR TROIS LIGNES PAR JOUR => 0h, 12h, 23h
+        #   df["hour"] = df["date"].dt.hour
+        #   df = df[df["hour"].isin([0,12,23])]
+        #
+        # Choisissez la variante souhaitée, en décommentant l'une ou l'autre:
+        # -------------------------------------------------------------------
+        df["hour"] = df["date"].dt.hour
+
+        # => 1 relevé par jour, sur l'heure 12 :
+        df = df[df["hour"].isin([0,12,23])]
+
+        # Ou => 3 relevés par jour, ex. 0h, 12h, 23h
+        #df = df[df["hour"].isin([0,12,23])]
+
+        df.drop(columns=["hour"], inplace=True, errors="ignore")
+        # FIN AJOUT MINIMAL
+        # -------------------------------------------------------------------
+
         return df
 
     except Exception as e:
         logging.error(f"[LUNAR ERROR] symbol={symbol} => {e}")
         return None
+
 
 def compute_label(df: pd.DataFrame, shift_days=2, threshold=0.30) -> pd.DataFrame:
     """
@@ -203,8 +230,6 @@ def main():
         df_indic = compute_rsi_macd_atr(df_lunar)
 
         # On fusionne pour conserver le label
-        # (alternativement, on peut juste bosser sur df_indic avant compute_label,
-        #  mais on a besoin de la colonne close etc. Les 2 solutions sont valables.)
         df_indic["label"] = df_lunar["label"]
 
         # Ajout du symbole
