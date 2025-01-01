@@ -9,9 +9,12 @@ import numpy as np
 from sklearn.model_selection import train_test_split, RandomizedSearchCV, StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
 from sklearn.metrics import classification_report
 import joblib
+
+# Imbalanced-learn pour gérer le déséquilibre
+from imblearn.over_sampling import RandomOverSampler
+from imblearn.pipeline import Pipeline as ImbPipeline
 
 #####################################
 # CONFIGURATIONS
@@ -28,6 +31,7 @@ logging.basicConfig(
 )
 logging.info("=== START train_model ===")
 
+
 #####################################
 # SCRIPT PRINCIPAL
 #####################################
@@ -36,38 +40,33 @@ def main():
     Entraîne un modèle ML (RandomForest) pour prédire la probabilité
     qu'un token prenne +30% sur 2 jours (colonne 'label'=1).
     
-    Étapes principales :
-      1) Vérifie l'existence du CSV.
-      2) Charge les données et vérifie la présence des colonnes requises.
-      3) Filtre les lignes NaN.
-      4) Split (train/test) stratifié.
-      5) Crée un pipeline (scaling + random forest).
-      6) Recherche d'hyperparamètres (RandomizedSearchCV).
-      7) Évalue le meilleur modèle sur le set de test.
-      8) Sauvegarde le modèle dans un fichier .pkl.
+    Points clés pour améliorer la fiabilité vis-à-vis du déséquilibre :
+      - Sur-échantillonnage (RandomOverSampler) des exemples positifs
+        directement dans le pipeline.
+      - Évaluation basée sur F1-score, pour mieux considérer la classe 1.
+      - StratifiedKFold et train_test_split(stratify=y).
     """
 
-    # 1) Vérification de l'existence du CSV
+    # 1) Vérifier l'existence du CSV
     if not os.path.exists(CSV_FILE):
         logging.error(f"Fichier CSV introuvable: {CSV_FILE}")
         print("Aucun CSV => entraînement impossible. Vérifiez build_csv.")
         return
 
-    # 2) Chargement des données
+    # 2) Charger les données
     df = pd.read_csv(CSV_FILE)
     logging.info(f"CSV chargé: {CSV_FILE} => {df.shape[0]} lignes, {df.shape[1]} colonnes")
 
-    # 3) Vérification de la colonne 'label'
+    # 3) Vérifier la colonne 'label'
     if "label" not in df.columns:
         logging.error("Colonne 'label' manquante => entraînement impossible.")
         print("Pas de colonne 'label' => entraînement impossible.")
         return
 
-    # 4) Sélection des features + label
-    #    IMPORTANT: assurez-vous que ces colonnes existent bien dans le CSV.
-    #    On inclut par exemple :
-    #       close, volume, market_cap, variation, galaxy_score, alt_rank,
-    #       sentiment, rsi, macd, atr
+    # 4) Spécifier les features souhaitées
+    #    IMPORTANT: assurez-vous que ces colonnes existent réellement dans le CSV
+    #    On prend un exemple : close, volume, market_cap, variation, galaxy_score,
+    #    alt_rank, sentiment, rsi, macd, atr
     features = [
         "close", "volume", "market_cap", "variation",
         "galaxy_score", "alt_rank", "sentiment",
@@ -75,14 +74,14 @@ def main():
     ]
     target = "label"
 
-    # Vérification que toutes les colonnes de 'features' sont présentes
+    # Vérifier l'existence des colonnes
     missing_cols = [col for col in features if col not in df.columns]
     if missing_cols:
         logging.error(f"Colonnes manquantes dans le CSV: {missing_cols}")
         print(f"Colonnes manquantes dans le CSV: {missing_cols}\nImpossible d'entraîner.")
         return
 
-    # Retrait des lignes qui contiennent des NaN
+    # 5) Retirer les lignes NaN
     sub = df.dropna(subset=features + [target]).copy()
     if sub.empty:
         logging.error("Toutes les données sont NaN => impossible d'entraîner.")
@@ -92,25 +91,30 @@ def main():
     X = sub[features]
     y = sub[target].astype(int)
 
-    # 5) Séparation train/test (stratifié)
+    # 6) Split train/test (stratifié)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
     logging.info(f"Split => train={len(X_train)}, test={len(X_test)}")
 
-    # 6) Création d'un Pipeline: StandardScaler + RandomForest
-    #    On met class_weight="balanced_subsample" pour gérer le déséquilibre.
-    from sklearn.pipeline import Pipeline
-    pipe = Pipeline([
+    # 7) Pipeline incluant :
+    #    - OverSampling (RandomOverSampler) pour dupliquer la classe minoritaire
+    #    - Scaler (StandardScaler) pour normaliser
+    #    - RandomForestClassifier
+    ros = RandomOverSampler(random_state=42)
+    rf = RandomForestClassifier(
+        class_weight=None,  # On laisse None car on sur-échantillonne déjà
+        random_state=42
+    )
+
+    # Imbalanced-learn Pipeline
+    pipe = ImbPipeline([
+        ("oversample", ros),
         ("scaler", StandardScaler()),
-        ("clf", RandomForestClassifier(
-            class_weight="balanced_subsample",
-            random_state=42
-        ))
+        ("clf", rf)
     ])
 
-    # 7) Définition de l'espace de recherche d'hyperparamètres
-    #    On utilise RandomizedSearchCV pour gagner du temps (vs GridSearch).
+    # 8) Définition de l'espace de recherche
     param_distributions = {
         "clf__n_estimators":    [50, 100, 200, 300, 500, 800],
         "clf__max_depth":       [5, 10, 15, 20, None],
@@ -118,38 +122,39 @@ def main():
         "clf__min_samples_leaf":  [1, 2, 5],
     }
 
-    # On fait 20 itérations, scoring="f1" pour tenir compte du déséquilibre.
     from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
     search = RandomizedSearchCV(
         estimator=pipe,
         param_distributions=param_distributions,
-        n_iter=20,               # Nombre de combinaisons à tester
-        scoring="f1",            # f1 pour gérer la rareté de la classe 1
-        n_jobs=-1,               # utilise tous les CPU disponibles
+        n_iter=20,
+        scoring="f1",        # f1-score pour mieux prendre en compte la classe 1
+        n_jobs=-1,           # utilise tous les cœurs
         cv=cv,
         random_state=42,
         verbose=1
     )
 
-    # 8) Lancement de la recherche + entraînement
+    # 9) Entraînement + recherche d'hyperparamètres
     search.fit(X_train, y_train)
+    best_model = search.best_estimator_
+
     logging.info(f"Meilleurs paramètres: {search.best_params_}")
     print("Meilleurs hyperparamètres trouvés:", search.best_params_)
 
-    best_model = search.best_estimator_
-
-    # 9) Évaluation finale sur le set de test
+    # 10) Évaluation finale sur le set de test
     y_pred = best_model.predict(X_test)
     report = classification_report(y_test, y_pred, digits=3)
     logging.info("\n" + report)
     print("\n===== Évaluation finale sur le set de test =====")
     print(report)
 
-    # 10) Sauvegarde du meilleur modèle
+    # 11) Sauvegarde du meilleur modèle
     joblib.dump(best_model, MODEL_FILE)
     logging.info(f"Modèle sauvegardé => {MODEL_FILE}")
     print(f"Modèle sauvegardé => {MODEL_FILE}")
+
 
 if __name__ == "__main__":
     main()
