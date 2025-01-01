@@ -16,7 +16,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install requests pandas scikit-learn joblib ta
+          pip install requests pandas scikit-learn joblib ta imbalanced-learn
 
       - name: Run build_csv
         run: |
