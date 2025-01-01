@@ -21,7 +21,7 @@ LUNAR_API_KEY = "85zhfo9yl9co22cl7kw2sucossm59awchvwf8s8ub"
 # SHIFT_DAYS => label (hausse sur 2 jours)
 SHIFT_DAYS = 2
 # THRESHOLD => 30% de hausse => label=1
-THRESHOLD = 0.30
+THRESHOLD = 0.15
 
 OUTPUT_CSV = "training_data.csv"
 LOG_FILE = "build_csv.log"
