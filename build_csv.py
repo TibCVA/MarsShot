@@ -112,7 +112,7 @@ def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
     Récupère l'historique daily (ou potentiellement + d'un point par jour)
     via l'endpoint v2 de LunarCrush:
       GET /api4/public/coins/<symbol>/time-series/v2
-    Retourne un DataFrame (date, open, close, high, low, volume, market_cap, etc.)
+    Retourne un DataFrame (date, open, close, high, low, volume, market_cap, galaxy_score, alt_rank, sentiment)
     ou None si échec.
     """
     url = f"https://lunarcrush.com/api4/public/coins/{symbol}/time-series/v2"
@@ -148,16 +148,22 @@ def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
             lo = point.get("low", None)
             vol_24 = point.get("volume_24h", None)
             mc = point.get("market_cap", None)
+            # Ajout des 3 indicateurs : galaxy_score, alt_rank, sentiment
+            galaxy = point.get("galaxy_score", None)
+            alt_r = point.get("alt_rank", None)
+            senti = point.get("sentiment", None)
 
             rows.append([
-                dt_utc, o, c, h, lo, vol_24, mc
+                dt_utc, o, c, h, lo, vol_24, mc,
+                galaxy, alt_r, senti
             ])
 
         if not rows:
             return None
 
         df = pd.DataFrame(rows, columns=[
-            "date","open","close","high","low","volume","market_cap"
+            "date","open","close","high","low","volume","market_cap",
+            "galaxy_score","alt_rank","sentiment"
         ])
         df.sort_values("date", inplace=True)
         df.reset_index(drop=True, inplace=True)
