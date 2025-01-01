@@ -5,6 +5,7 @@ import os
 import logging
 import pandas as pd
 import numpy as np
+import joblib
 
 from sklearn.model_selection import (
     train_test_split,
@@ -14,27 +15,30 @@ from sklearn.model_selection import (
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report
-import joblib
 
-# --- Nouvelle importation du Pipeline d'imblearn ---
+########################################
+# TENTATIVE import d'imblearn (SMOTE + Pipeline)
+########################################
 try:
-    from imblearn.pipeline import Pipeline  # <-- pipeline compatible SMOTE
     from imblearn.over_sampling import SMOTE
-    IMBLEARN_AVAILABLE = True
+    from imblearn.pipeline import Pipeline as ImbPipeline
+    IMBLEARN_OK = True
 except ImportError:
-    # On pourra fallback sur scikit pipeline + class_weight="balanced_subsample"
-    IMBLEARN_AVAILABLE = False
-    print("[WARN] 'imbalanced-learn' n'est pas installé => SMOTE désactivé.")
+    IMBLEARN_OK = False
+    print("[WARNING] 'imbalanced-learn' non disponible => pas de SMOTE.")
+
+########################################
+# ALTERNATIVE pipeline scikit-learn
+########################################
+from sklearn.pipeline import Pipeline as SkPipeline
 
 ########################################
 # CONFIG
 ########################################
+LOG_FILE   = "train_model.log"
+CSV_FILE   = "training_data.csv"  # Fichier généré par build_csv
+MODEL_FILE = "model.pkl"          # Nom sous lequel on sauvegarde le modèle
 
-LOG_FILE = "train_model.log"
-CSV_FILE = "training_data.csv"   # Fichier généré par build_csv.py
-MODEL_FILE = "model.pkl"         # Le modèle final sera sauvegardé ici
-
-# Configuration du logger
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
@@ -42,37 +46,32 @@ logging.basicConfig(
 )
 logging.info("=== START train_model ===")
 
-########################################
-# SCRIPT PRINCIPAL
-########################################
+
 def main():
-    """
-    Script d'entraînement d'un RandomForest pour prédire la colonne 'label' (0/1).
-    - 1 => token a pris +XX% (ex. 15% ou 30%) sur 2 jours, 0 => sinon.
-    - On utilise un Pipeline imblearn si possible :
-         [Scaler] -> [SMOTE] -> [RandomForest].
-      Sinon on fallback :
-         [Scaler] -> [RF avec class_weight='balanced_subsample'].
-    - RandomizedSearchCV sur un espace de paramètres plus large => plus long,
-      mais potentiellement plus performant.
+    """ 
+    Script d'entraînement:
+      - Lecture CSV
+      - Sélection features/label
+      - Pipeline = [StandardScaler] + [SMOTE?] + [RandomForest]
+      - RandomizedSearchCV (10 folds, 50 itérations)
+      - Sauvegarde du meilleur modèle
     """
 
-    # 1) Vérification de l'existence du CSV
+    # 1) Vérif CSV
     if not os.path.exists(CSV_FILE):
-        print(f"[ERREUR] Fichier CSV '{CSV_FILE}' introuvable.")
-        logging.error(f"CSV introuvable: {CSV_FILE}")
+        print(f"[ERREUR] CSV '{CSV_FILE}' introuvable. Annulation.")
+        logging.error("Fichier CSV manquant.")
         return
 
-    # 2) Chargement du CSV
+    # 2) Lecture CSV
     df = pd.read_csv(CSV_FILE)
-    logging.info(f"CSV chargé => {df.shape[0]} lignes, {df.shape[1]} colonnes.")
-
+    logging.info(f"CSV: {df.shape[0]} lignes, {df.shape[1]} colonnes.")
     if "label" not in df.columns:
-        print("[ERREUR] Pas de colonne 'label' => impossible d'entraîner.")
+        print("[ERREUR] Pas de colonne 'label'.")
         logging.error("Colonne 'label' manquante.")
         return
 
-    # Ex. de features => adaptez selon vos colonnes
+    # Ex. de features — adaptez selon votre CSV.
     features = [
         "close", "volume", "market_cap",
         "galaxy_score", "alt_rank", "sentiment",
@@ -80,40 +79,43 @@ def main():
     ]
     target = "label"
 
-    # Vérification
-    missing_cols = [f for f in features if f not in df.columns]
-    if missing_cols:
-        print("[ERREUR] Colonnes manquantes:", missing_cols)
-        logging.error(f"Colonnes manquantes: {missing_cols}")
+    # Vérif colonnes
+    missing = [col for col in features if col not in df.columns]
+    if missing:
+        print("[ERREUR] Colonnes manquantes:", missing)
+        logging.error(f"Colonnes manquantes: {missing}")
         return
 
-    # Filtre NaN
+    # Drop NaN
     sub = df.dropna(subset=features + [target]).copy()
     if sub.empty:
-        print("[ERREUR] Toutes les données sont NaN => impossible d'entraîner.")
+        print("[ERREUR] Aucune ligne exploitable (NaN).")
         logging.error("Données vides après dropna.")
         return
 
     X = sub[features]
     y = sub[target].astype(int)
 
-    # 3) Split train/test (stratifié sur y)
+    # 3) Split
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.20, random_state=42, stratify=y
+        X, y, test_size=0.2, random_state=42, stratify=y
     )
     logging.info(f"Split => train={len(X_train)}, test={len(X_test)}")
 
-    # 4) Construction du Pipeline
-    if IMBLEARN_AVAILABLE:
-        # Pipeline d'imblearn avec SMOTE
+    # 4) Choix du pipeline
+    if IMBLEARN_OK:
+        # => Pipeline avec SMOTE
         steps = [
             ("scaler", StandardScaler()),
             ("smote", SMOTE(random_state=42)),
             ("clf", RandomForestClassifier(random_state=42))
         ]
+        pipeline_class = ImbPipeline
+        logging.info("Pipeline IMB + SMOTE.")
     else:
-        # Fallback : scikit pipeline, class_weight='balanced_subsample'
-        from sklearn.pipeline import Pipeline as SKLPipeline
+        # => Pipeline scikit-learn
+        #    On met class_weight="balanced_subsample" pour compenser
+        #    partiellement l'absence de SMOTE
         steps = [
             ("scaler", StandardScaler()),
             ("clf", RandomForestClassifier(
@@ -121,12 +123,12 @@ def main():
                 random_state=42
             ))
         ]
-        Pipeline = SKLPipeline  # on redéfinit Pipeline pour la suite
+        pipeline_class = SkPipeline
+        logging.info("Pipeline SKLearn sans SMOTE (fallback).")
 
-    pipe = Pipeline(steps)
+    pipe = pipeline_class(steps)
 
     # 5) Espace de recherche d'hyperparamètres
-    #    On inclut plus de possibilités => plus long.
     param_distributions = {
         "clf__n_estimators":      [100, 200, 300, 500, 800, 1200],
         "clf__max_depth":         [5, 10, 15, 20, 30, None],
@@ -136,39 +138,42 @@ def main():
         "clf__bootstrap":         [True, False]
     }
 
-    # 6) Setup du RandomizedSearchCV
+    # 6) RandomizedSearchCV
     from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
-    cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)  # 10 folds
+
+    cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
 
     search = RandomizedSearchCV(
         estimator=pipe,
         param_distributions=param_distributions,
-        n_iter=50,          # 50 tirages => plus long, potentiellement mieux
-        scoring="f1",       # f1 => compromis entre precision et recall
-        n_jobs=-1,          # parallélise
+        n_iter=50,          # Nombre d'itérations
+        scoring="f1",       # f1 => focus sur la classe minoritaire
+        n_jobs=-1,
         cv=cv,
         verbose=1,
         random_state=42
     )
 
-    print("\n[INFO] Lancement de la recherche d'hyperparamètres (long).")
+    print("\n[INFO] Recherche d'hyperparamètres (peut prendre du temps) ...")
+    logging.info("Début RandomizedSearchCV avec 10 folds, 50 itérations.")
     search.fit(X_train, y_train)
 
     best_model = search.best_estimator_
-    logging.info(f"Best params: {search.best_params_}")
+    logging.info(f"Best Params: {search.best_params_}")
     print("[RESULT] Meilleurs hyperparamètres =>", search.best_params_)
 
-    # 7) Évaluation finale
+    # 7) Évaluation
     y_pred = best_model.predict(X_test)
     rep = classification_report(y_test, y_pred, digits=3)
     logging.info("\n" + rep)
-    print("\n=== Rapport final sur le set de test ===")
+    print("\n=== Rapport final sur test ===")
     print(rep)
 
-    # 8) Sauvegarde du modèle
+    # 8) Sauvegarde
     joblib.dump(best_model, MODEL_FILE)
     logging.info(f"Modèle sauvegardé => {MODEL_FILE}")
     print(f"\n[OK] Modèle sauvegardé => {MODEL_FILE}")
+
 
 if __name__ == "__main__":
     main()
