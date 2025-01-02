@@ -9,24 +9,22 @@ import os
 from datetime import datetime
 from typing import Optional
 
-# On importe notre module indicators.py (qui contient compute_rsi_macd_atr)
+# On importe le module indicators.py, qui doit contenir compute_rsi_macd_atr
 from indicators import compute_rsi_macd_atr
 
 #####################################
-# PARAMÈTRES GLOBAUX
+# PARAMÈTRES
 #####################################
 
-LUNAR_API_KEY = "VOTRE_CLE_API_LUNAR"
-# Exemple: "85zhfo9yl9co22cl7kw2sucossm59awchvwf8s8ub"
-# Remplacez par votre clé
-
-SHIFT_DAYS = 2      # Délai pour calculer le label (hausse sur 2 jours)
-THRESHOLD = 0.05    # Seuil de hausse => label=1 si +5% par ex.
+LUNAR_API_KEY = "VOTRE_CLE_API_LUNAR"  # Remplacez par votre clé valide
+SHIFT_DAYS = 2       # Label => hausse sur 2 jours
+THRESHOLD = 0.05     # Seuil => 5% par exemple
 
 OUTPUT_CSV = "training_data.csv"
 LOG_FILE = "build_csv.log"
 
-SLEEP_BETWEEN_TOKENS = 6  # 6 secondes entre chaque token pour éviter le rate-limit
+# Pause pour éviter le rate-limit (10 requêtes/minute maxi)
+SLEEP_BETWEEN_TOKENS = 6
 
 logging.basicConfig(
     filename=LOG_FILE,
@@ -37,7 +35,7 @@ logging.info("=== START build_csv ===")
 
 
 #####################################
-# LISTE DE TOKENS ALT
+# LISTE TOKENS ALT
 #####################################
 TOKENS = [
     {"symbol": "GOAT"},
@@ -232,7 +230,8 @@ TOKENS = [
     {"symbol": "ACH"},
     {"symbol": "HIGH"}
 ]
-# Vous pouvez en ajouter davantage si besoin.
+# Vous pouvez en ajouter davantage.
+
 
 #####################################
 # FONCTIONS
@@ -241,11 +240,11 @@ TOKENS = [
 def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
     """
     Récupère l'historique (time-series v2) depuis LunarCrush pour un 'symbol'.
-    On fixe bucket=day, interval=1y.
-    On récupère: date, open, close, high, low, volume_24h, market_cap,
-                 galaxy_score, alt_rank, sentiment
-    On ne garde que les lignes correspondant aux heures 0h,12h,23h (pour n'avoir
-    qu'1 ou 3 relevés par jour). Puis on renvoie un DataFrame ou None.
+    On fixe : bucket=day, interval=1y.
+    Champs retournés : date, open, close, high, low, volume_24h, market_cap,
+                       galaxy_score, alt_rank, sentiment.
+    On ne garde que les heures 0h, 12h, 23h => 1 ou 3 relevés par jour.
+    Retourne un DataFrame ou None si rien.
     """
 
     url = f"https://lunarcrush.com/api4/public/coins/{symbol}/time-series/v2"
@@ -254,16 +253,18 @@ def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
         "bucket": "day",
         "interval": "1y"
     }
+
     try:
         r = requests.get(url, params=params, timeout=30)
         logging.info(f"[LUNAR] symbol={symbol}, status={r.status_code}")
+
         if r.status_code != 200:
             logging.warning(f"[LUNAR WARNING] {symbol} => HTTP={r.status_code}, skip.")
             return None
 
         j = r.json()
         if "data" not in j or not j["data"]:
-            logging.warning(f"[LUNAR WARNING] {symbol} => pas de data => skip.")
+            logging.warning(f"[LUNAR WARNING] {symbol} => data vide => skip.")
             return None
 
         rows = []
@@ -271,21 +272,21 @@ def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
             unix_ts = point.get("time")
             if not unix_ts:
                 continue
-            dt_utc = datetime.utcfromtimestamp(unix_ts)
 
-            o    = point.get("open", None)
-            c    = point.get("close", None)
-            h    = point.get("high", None)
-            lo   = point.get("low", None)
-            vol  = point.get("volume_24h", None)
-            mc   = point.get("market_cap", None)
-            gal  = point.get("galaxy_score", None)
-            alt_ = point.get("alt_rank", None)
-            sent = point.get("sentiment", None)
+            dt_utc = datetime.utcfromtimestamp(unix_ts)
+            o      = point.get("open", None)
+            c      = point.get("close", None)
+            h      = point.get("high", None)
+            lo     = point.get("low", None)
+            vol    = point.get("volume_24h", None)
+            mc     = point.get("market_cap", None)
+            gal    = point.get("galaxy_score", None)
+            alt_   = point.get("alt_rank", None)
+            senti  = point.get("sentiment", None)
 
             rows.append([
                 dt_utc, o, c, h, lo, vol, mc,
-                gal, alt_, sent
+                gal, alt_, senti
             ])
 
         if not rows:
@@ -298,10 +299,10 @@ def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
         df.sort_values("date", inplace=True)
         df.reset_index(drop=True, inplace=True)
 
-        # On ne conserve qu'1 (ou 3) relevé(s) par jour => ex. 0h,12h,23h
+        # Filtrage sur hour in [0,12,23]
         df["hour"] = df["date"].dt.hour
         df = df[df["hour"].isin([0,12,23])]
-        df.drop(columns=["hour"], inplace=True, errors="ignore")
+        df.drop(columns=["hour"], inplace=True)
 
         return df
 
@@ -312,7 +313,7 @@ def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
 
 def compute_label(df: pd.DataFrame, shift_days=2, threshold=0.05) -> pd.DataFrame:
     """
-    Ajoute une colonne 'label' => 1 si (future_close - close)/close >= threshold
+    Ajoute 'label' => 1 si (close futur - close) / close >= threshold
     On calcule future_close = close.shift(-shift_days).
     """
     df = df.sort_values("date").reset_index(drop=True)
@@ -325,121 +326,112 @@ def compute_label(df: pd.DataFrame, shift_days=2, threshold=0.05) -> pd.DataFram
     return df
 
 
-def compute_daily_change(df: pd.DataFrame, col_name="daily_change") -> pd.DataFrame:
+def compute_daily_change(df: pd.DataFrame, col_name: str) -> pd.DataFrame:
     """
-    Calcule la variation journalière du prix de clôture (ex: close(t)/close(t-1) - 1).
-    Hypothèse: df est trié par date. On crée une colonne 'col_name'.
-    ATTENTION: On utilise le close => daily_change(t) = (close(t) / close(t-1) -1)
+    Calcule la variation quotidienne de 'close':
+       daily_change(t) = close(t)/close(t-1) - 1
+    On stocke le résultat dans df[col_name].
     """
     df = df.sort_values("date").reset_index(drop=True)
-    df[col_name] = None
     if "close" not in df.columns:
+        df[col_name] = None
         return df
 
-    # On fait un shift(1) => close(t-1) => on calcule la variation
     df["prev_close"] = df["close"].shift(1)
-    df[col_name] = df.apply(
-        lambda row: (row["close"] / row["prev_close"] - 1) if row["prev_close"] else None,
-        axis=1
-    )
+    df[col_name] = (df["close"] / df["prev_close"] - 1).fillna(None)
     df.drop(columns=["prev_close"], inplace=True)
     return df
 
 
 def main():
-    logging.info("=== build_csv => collecting data + indicators + BTC/ETH daily change ===")
+    logging.info("=== build_csv => collecting data with BTC/ETH daily changes ===")
 
-    # 1) On commence par récupérer l'historique BTC
+    # === 1) BTC ===
     df_btc = fetch_lunar_data("BTC")
-    if df_btc is None or df_btc.empty:
-        logging.warning("Pas de data BTC => on continue quand même, btc_daily_change sera NaN.")
+    if df_btc is not None and not df_btc.empty:
+        df_btc = compute_daily_change(df_btc, "btc_daily_change")
+        df_btc = df_btc[["date","btc_daily_change"]]
+    else:
+        # on crée un df vide avec les colonnes date + btc_daily_change
         df_btc = pd.DataFrame(columns=["date","btc_daily_change"])
 
-    else:
-        # Calcul du daily_change pour BTC
-        df_btc = compute_daily_change(df_btc, col_name="btc_daily_change")
-        # On ne garde que date + btc_daily_change
-        df_btc = df_btc[["date","btc_daily_change"]].copy()
-
-    # 2) Pareil pour ETH
+    # === 2) ETH ===
     df_eth = fetch_lunar_data("ETH")
-    if df_eth is None or df_eth.empty:
-        logging.warning("Pas de data ETH => on continue quand même, eth_daily_change sera NaN.")
-        df_eth = pd.DataFrame(columns=["date","eth_daily_change"])
+    if df_eth is not None and not df_eth.empty:
+        df_eth = compute_daily_change(df_eth, "eth_daily_change")
+        df_eth = df_eth[["date","eth_daily_change"]]
     else:
-        df_eth = compute_daily_change(df_eth, col_name="eth_daily_change")
-        df_eth = df_eth[["date","eth_daily_change"]].copy()
+        df_eth = pd.DataFrame(columns=["date","eth_daily_change"])
 
-    # 3) On va construire la liste des dataframes finaux
+    # === 3) Récup + label + indicateurs pour alt tokens
     all_dfs = []
     nb_tokens = len(TOKENS)
 
     for i, tk in enumerate(TOKENS, start=1):
         sym = tk["symbol"]
-        logging.info(f"[{i}/{nb_tokens}] => symbol={sym}")
+        logging.info(f"[{i}/{nb_tokens}] => {sym}")
 
-        # Récup data alt
-        df_lunar = fetch_lunar_data(sym)
-        if df_lunar is None or df_lunar.empty:
-            logging.warning(f"No data for {sym}, skipping.")
+        df_alt = fetch_lunar_data(sym)
+        if df_alt is None or df_alt.empty:
+            logging.warning(f"No data for {sym} => skip.")
             continue
 
         # Label
-        df_lunar = compute_label(df_lunar, SHIFT_DAYS, THRESHOLD)
+        df_alt = compute_label(df_alt, SHIFT_DAYS, THRESHOLD)
 
-        # RSI, MACD, ATR
-        df_indic = compute_rsi_macd_atr(df_lunar)
+        # Indicateurs
+        df_indic = compute_rsi_macd_atr(df_alt)
 
-        # On recopie label
-        df_indic["label"] = df_lunar["label"]
-        # On dropna label
+        # Copie label
+        df_indic["label"] = df_alt["label"]
         df_indic.dropna(subset=["label"], inplace=True)
 
-        # On ajoute la colonne symbol
+        # Symbol
         df_indic["symbol"] = sym
 
-        # Merge with BTC daily change
-        # => On fait un merge "left" sur la date
-        # => Les dates n'ayant pas de correspondance BTC => btc_daily_change = NaN
+        # Merge BTC
         df_merged = pd.merge(
             df_indic, df_btc,
-            on="date",
-            how="left"
+            on="date", how="left"
         )
 
-        # Merge with ETH daily change
+        # Merge ETH
         df_merged = pd.merge(
             df_merged, df_eth,
-            on="date",
-            how="left"
+            on="date", how="left"
         )
 
-        # Tout est prêt, on l'ajoute à la liste
         all_dfs.append(df_merged)
-
         time.sleep(SLEEP_BETWEEN_TOKENS)
 
-    # 4) Concat final
-    if not all_dfs:
-        logging.warning("No data => no CSV final.")
-        print("No data => no CSV => check logs.")
+    # === 4) Concat final (ou vide)
+    if len(all_dfs) == 0:
+        # On crée un CSV minimal, par exemple
+        logging.warning("No alt tokens data => CSV vide minimal.")
+        df_min = pd.DataFrame(columns=[
+            "date","open","close","high","low","volume","market_cap",
+            "galaxy_score","alt_rank","sentiment","rsi","macd","atr",
+            "label","symbol","btc_daily_change","eth_daily_change"
+        ])
+        df_min.to_csv(OUTPUT_CSV, index=False)
+        print(f"[WARN] Aucune data alt => CSV vide créé => {OUTPUT_CSV}")
         return
 
     df_final = pd.concat(all_dfs, ignore_index=True)
     df_final.sort_values(["symbol","date"], inplace=True)
     df_final.reset_index(drop=True, inplace=True)
 
-    # On retire variation/future_close si elles existent
+    # On supprime variation/future_close si elles existent
     for col in ["variation","future_close"]:
         if col in df_final.columns:
-            df_final.drop(columns=[col], inplace=True, errors="ignore")
+            df_final.drop(columns=[col], inplace=True)
 
-    # 5) Export
+    # === 5) Export
     df_final.to_csv(OUTPUT_CSV, index=False)
     logging.info(f"Export => {OUTPUT_CSV} => {len(df_final)} rows")
     print(f"Export => {OUTPUT_CSV} ({len(df_final)} rows)")
 
-    logging.info("=== DONE build_csv with BTC/ETH daily change ===")
+    logging.info("=== DONE build_csv (BTC/ETH daily changes) ===")
 
 
 if __name__ == "__main__":
