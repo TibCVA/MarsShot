@@ -161,7 +161,7 @@ def main():
         random_state=42
     )
 
-    logging.info("Lancement RandomizedSearchCV (7 folds, 50 itérations).")
+    logging.info("Lancement RandomizedSearchCV (10 folds, 50 itérations).")
     print("[INFO] Recherche d'hyperparamètres => patience ...")
     search.fit(X_train, y_train)
 
