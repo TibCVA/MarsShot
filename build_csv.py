@@ -232,7 +232,6 @@ TOKENS = [
     {"symbol": "ACH"},
     {"symbol": "HIGH"}
 ]
-]
 # Vous pouvez en ajouter davantage si besoin.
 
 #####################################
