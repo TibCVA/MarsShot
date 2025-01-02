@@ -53,7 +53,7 @@ def main():
       - Lecture CSV
       - Sélection features/label
       - Pipeline = [StandardScaler] + [SMOTE?] + [RandomForest]
-      - RandomizedSearchCV (10 folds, 50 itérations)
+      - RandomizedSearchCV (5 folds, 50 itérations)
       - Sauvegarde du meilleur modèle
     """
 
@@ -141,7 +141,7 @@ def main():
     # 6) RandomizedSearchCV
     from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
 
-    cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
     search = RandomizedSearchCV(
         estimator=pipe,
@@ -155,7 +155,7 @@ def main():
     )
 
     print("\n[INFO] Recherche d'hyperparamètres (peut prendre du temps) ...")
-    logging.info("Début RandomizedSearchCV avec 10 folds, 50 itérations.")
+    logging.info("Début RandomizedSearchCV avec 5 folds, 50 itérations.")
     search.fit(X_train, y_train)
 
     best_model = search.best_estimator_
