@@ -36,5 +36,5 @@ def load_state(initial_cap):
         return st
 
 def save_state(state):
-    with open(STATE_FILE,"w") as f:
+    with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
