@@ -193,3 +193,33 @@ Tout cela te donne un système complet :
 	•	Facile à ré-entraîner (via GitHub Actions ou python build_csv.py && python train_model.py).
 
 Voilà pour un rendu didactique et exhaustif !
+
+
+
+Dans la version finale du bot Telegram (tel qu’il est codé dans le script « telegram_integration.py »), les commandes disponibles sont :
+	1.	/start
+	•	Affiche un message de bienvenue et la liste des autres commandes disponibles.
+	2.	/port
+	•	Montre l’état global du portefeuille, c’est-à-dire :
+	•	La valeur totale en USDT.
+	•	Les positions actuelles (symbol, quantité, valeur estimée).
+	3.	/perf
+	•	Montre la performance détaillée par position (exemple : +X % sur 1 jour, +Y % sur 7 jours, +Z % sur 30 jours, etc.).
+	•	Calcule ces performances via l’historique (klines) sur Binance.
+	4.	/tokens
+	•	Liste les tokens actuellement suivis (c’est-à-dire ceux présents dans la section tokens_daily de ton fichier config.yaml).
+	5.	/add <symbol>
+	•	Ajoute un token à la liste de suivi (ajout direct dans tokens_daily du config.yaml).
+	•	Exemple : /add FET pour commencer à suivre « FET ».
+	6.	/remove <symbol>
+	•	Retire un token de la liste de suivi (tokens_daily).
+	•	Exemple : /remove MANA pour cesser de suivre « MANA ».
+	7.	/emergency
+	•	Déclenche la vente immédiate de toutes les positions en portefeuille (tout passe en USDT).
+	•	Cas d’usage : “panic button” si tu veux sortir du marché très rapidement.
+
+Rappels :
+	•	Les rapports automatiques (sans commande de ta part) sont aussi envoyés à 7h, 12h, 17h et 22h (par défaut), présentant la valeur totale du portefeuille.
+	•	Les notifications de transaction (BUY/SELL) sont envoyées dès qu’une opération d’achat ou de vente est réalisée.
+
+Ainsi, tu as un bot Telegram couvrant à la fois les commandes manuelles et les notifications automatiques.
