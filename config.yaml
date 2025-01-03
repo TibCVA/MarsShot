@@ -6,14 +6,13 @@ lunarcrush:
   api_key: "85zhfo9yl9co22cl7kw2sucossm59awchvwf8s8ub"
 
 coinbase:
-  # coinbase n'a pas besoin de clé pour le prix spot (public)
   pass: "none"
 
 binance_api:
   api_key: "MLgAZHirgL3NyfYu8q2ReV9fSRmwOW17fQ3wKC99EcsXgaJUlIAlQ2afQ9UQ1rfU"
   api_secret: "FIC3JWQ4XoAPL22W0tBMbepGjjqVexToLg1wnSV26301p0PplUQ1wNQ7gf4aChlJ"
 
-# Tokens qu'on suit en daily (pour l'IA).
+# Tokens qu'on suit en daily
 tokens_daily:
   - "FET"
   - "AGIX"
@@ -23,17 +22,23 @@ tokens_daily:
   - "RNDR"
   - "MANA"
   - "SAND"
-  # Ajoute ici d'autres tokens si tu le souhaites
 
 strategy:
-  capital_initial: 1000.0      # en USDT
+  capital_initial: 1000.0
   buy_threshold: 0.70
   sell_threshold: 0.30
-  stop_loss_pct: 0.50          # -50% => intraday
-  partial_take_profit_pct: 1.0 # +100% => x2 => intraday
+  stop_loss_pct: 0.50
+  partial_take_profit_pct: 1.0
   partial_take_profit_ratio: 0.20
-  trailing_trigger_pct: 3.0    # +200% => x3 => intraday
-  trailing_pct: 0.30           # retracement 30% => on vend
-  big_gain_exception_pct: 4.0  # +300% => x4
-  check_interval_seconds: 300   # 5 min
-  daily_update_hour_utc: 0     # 00h UTC (on gère +30 min dans
+  trailing_trigger_pct: 3.0
+  trailing_pct: 0.30
+  big_gain_exception_pct: 4.0
+  check_interval_seconds: 300
+  daily_update_hour_utc: 0
+
+logging:
+  file: "bot.log"
+
+telegrams:
+  bot_token: "TON_TOKEN_ICI"
+  chat_id: "7703664631"
