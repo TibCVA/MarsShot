@@ -3,22 +3,20 @@
 # =======================
 
 lunarcrush:
-  api_key: "VOTRE_CLE_LUNARCRUSH"
+  api_key: "85zhfo9yl9co22cl7kw2sucossm59awchvwf8s8ub"
 
 coinbase:
   # coinbase n'a pas besoin de clé pour le prix spot (public)
   pass: "none"
 
 binance_api:
-  api_key: "VOTRE_CLE_BINANCE"
-  api_secret: "VOTRE_SECRET_BINANCE"
+  api_key: "MLgAZHirgL3NyfYu8q2ReV9fSRmwOW17fQ3wKC99EcsXgaJUlIAlQ2afQ9UQ1rfU"
+  api_secret: "FIC3JWQ4XoAPL22W0tBMbepGjjqVexToLg1wnSV26301p0PplUQ1wNQ7gf4aChlJ"
 
 # Tokens qu'on suit en daily (pour l'IA).
 # On inclut BTC et ETH car on veut calculer btc_daily_change / eth_daily_change.
 # On peut aussi inclure les altcoins cibles (ex: FET, AGIX, OP, ARB, etc.).
 tokens_daily:
-  - "BTC"
-  - "ETH"
   - "FET"
   - "AGIX"
   - "ARB"
