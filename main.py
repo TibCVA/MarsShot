@@ -9,20 +9,17 @@ import os
 import threading
 
 from modules.positions_store import load_state, save_state
-from modules.data_fetcher import fetch_prices_for_symbols
+from modules.data_fetcher import fetch_prices_for_symbols, fetch_current_price_from_binance
 from modules.risk_manager import update_positions_in_intraday
 from modules.trade_executor import TradeExecutor
 from modules.utils import send_telegram_message
-
-# ML pour daily_update
 from modules.ml_decision import get_probability_for_symbol
 
-# => NOUVEAU => si tu veux lancer le bot Telegram en même temps
-# (si tu as créé telegram_integration.py)
+# Optionnel => si tu as un telegram_integration.py
 from telegram_integration import run_telegram_bot
 
 def main():
-    # Optionnel => lancer le bot
+    # Lancer le bot Telegram dans un thread
     t = threading.Thread(target=run_telegram_bot, daemon=True)
     t.start()
 
@@ -38,7 +35,7 @@ def main():
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s"
     )
-    logging.info("[BOT] Started.")
+    logging.info("[BOT] Started main loop.")
 
     state = load_state(config["strategy"]["capital_initial"])
     bexec = TradeExecutor(
@@ -67,7 +64,7 @@ def main():
             # Intraday check
             if (time.time() - state.get("last_risk_check_ts", 0)
                ) >= config["strategy"]["check_interval_seconds"]:
-
+                
                 symbols_in_portfolio = list(state["positions"].keys())
                 if symbols_in_portfolio:
                     px_map = fetch_prices_for_symbols(symbols_in_portfolio)
@@ -83,9 +80,8 @@ def main():
 
 def daily_update(state, config, bexec):
     tokens = config["tokens_daily"]
-    strat = config["strategy"]
+    strat  = config["strategy"]
 
-    # SELL
     for sym in list(state["positions"].keys()):
         prob = get_probability_for_symbol(sym)
         if prob is None:
@@ -94,7 +90,7 @@ def daily_update(state, config, bexec):
 
         if prob < strat["sell_threshold"]:
             current_px = get_live_price(sym)
-            if current_px is None:
+            if not current_px:
                 continue
 
             ratio = current_px / state["positions"][sym]["entry_price"]
@@ -124,27 +120,4 @@ def daily_update(state, config, bexec):
 
     if buy_candidates:
         if state["capital_usdt"] > 0:
-            alloc = state["capital_usdt"] / len(buy_candidates)
-            for sym in buy_candidates:
-                if alloc < 5:
-                    break
-
-                qty, px = bexec.buy(sym, alloc)
-                if qty > 0:
-                    state["capital_usdt"] -= alloc
-                    state["positions"][sym] = {
-                        "qty": qty,
-                        "entry_price": px,
-                        "did_skip_sell_once": False,
-                        "partial_sold": False
-                    }
-                    logging.info(f"[DAILY BUY] {sym}, prob>=? => qty={qty}, px={px}")
-
-    save_state(state)
-
-def get_live_price(sym):
-    from modules.data_fetcher import fetch_current_price_from_coinbase
-    return fetch_current_price_from_coinbase(sym)
-
-if __name__ == "__main__":
-    main()
+            alloc = state["capital_usdt"]/len
