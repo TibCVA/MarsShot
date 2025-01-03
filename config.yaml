@@ -14,8 +14,6 @@ binance_api:
   api_secret: "FIC3JWQ4XoAPL22W0tBMbepGjjqVexToLg1wnSV26301p0PplUQ1wNQ7gf4aChlJ"
 
 # Tokens qu'on suit en daily (pour l'IA).
-# On inclut BTC et ETH car on veut calculer btc_daily_change / eth_daily_change.
-# On peut aussi inclure les altcoins cibles (ex: FET, AGIX, OP, ARB, etc.).
 tokens_daily:
   - "FET"
   - "AGIX"
@@ -25,19 +23,17 @@ tokens_daily:
   - "RNDR"
   - "MANA"
   - "SAND"
+  # Ajoute ici d'autres tokens si tu le souhaites
 
 strategy:
   capital_initial: 1000.0      # en USDT
   buy_threshold: 0.70
   sell_threshold: 0.30
-  stop_loss_pct: 0.50          # -50%
-  partial_take_profit_pct: 1.0 # +100% => 2x
+  stop_loss_pct: 0.50          # -50% => intraday
+  partial_take_profit_pct: 1.0 # +100% => x2 => intraday
   partial_take_profit_ratio: 0.20
-  trailing_trigger_pct: 3.0    # +200% => x3
+  trailing_trigger_pct: 3.0    # +200% => x3 => intraday
   trailing_pct: 0.30           # retracement 30% => on vend
   big_gain_exception_pct: 4.0  # +300% => x4
   check_interval_seconds: 300   # 5 min
-  daily_update_hour_utc: 0     # 00h UTC (on gère +30 min dans main.py)
-
-logging:
-  file: "bot.log"
+  daily_update_hour_utc: 0     # 00h UTC (on gère +30 min dans
