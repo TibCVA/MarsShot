@@ -1,69 +1,76 @@
 import logging
 import time
-import os
 from binance.client import Client
-from .positions_store import get_symbol_for_token
 
-def _init_binance_client(config):
-    k = config["binance_api"]["api_key"]
-    s = config["binance_api"]["api_secret"]
-    return Client(k,s)
+class TradeExecutor:
+    def __init__(self, api_key, api_secret):
+        self.client = Client(api_key, api_secret)
 
-def smart_buy(sym, quantity, config, data_map):
-    symbol = get_symbol_for_token(sym)
-    attempts = config["execution"]["retry_count"]
-    qty = round(quantity,5)
-    client = _init_binance_client(config)
-    for attempt in range(attempts):
+    def sell_all(self, symbol, qty):
+        """
+        Vend toute la qty sur la paire symbolUSDT (MARKET).
+        Retourne la valeur en USDT (approx).
+        """
+        if qty<=0:
+            return 0.0
+        real_qty = round(qty, 5)
         try:
-            order = client.create_order(
-                symbol=symbol,
-                side="BUY",
-                type="MARKET",
-                quantity=qty
-            )
-            logging.info(f"[BUY] {sym} => qty={qty}")
-            return True
-        except Exception as e:
-            logging.error(f"[BUY ERROR] {sym} => {e}")
-            time.sleep(2)
-    return False
-
-def smart_sell(sym, quantity, config):
-    symbol = get_symbol_for_token(sym)
-    attempts = config["execution"]["retry_count"]
-    qty = round(quantity,5)
-    client = _init_binance_client(config)
-    for attempt in range(attempts):
-        try:
-            order = client.create_order(
-                symbol=symbol,
+            order = self.client.create_order(
+                symbol=f"{symbol}USDT",
                 side="SELL",
                 type="MARKET",
-                quantity=qty
+                quantity=real_qty
             )
-            logging.info(f"[SELL] {sym} => qty={qty}")
-            return True
+            fill_sum = 0.0
+            fill_qty = 0.0
+            for fill in order.get("fills", []):
+                px  = float(fill["price"])
+                qf  = float(fill["qty"])
+                fill_sum += px*qf
+                fill_qty += qf
+            avg_px = fill_sum/fill_qty if fill_qty>0 else 0
+            logging.info(f"[SELL_ALL] {symbol} qty={real_qty}, avg_px={avg_px:.4f}")
+            return fill_sum
         except Exception as e:
-            logging.error(f"[SELL ERROR] {sym} => {e}")
-            time.sleep(2)
-    return False
+            logging.error(f"[SELL_ALL ERROR] {symbol} => {e}")
+            return 0.0
 
-def sell_all_positions(state, config):
-    for sym, pos in list(state["positions"].items()):
-        qty = pos["qty"]
-        smart_sell(sym, qty, config)
-    state["positions"] = {}
+    def sell_partial(self, symbol, qty):
+        """
+        Vend une partie de la position => quantite qty (MARKET).
+        """
+        return self.sell_all(symbol, qty)
 
-def sync_balances(state, config):
-    client = _init_binance_client(config)
-    try:
-        acc = client.get_account()["balances"]
-        usdt = 0.0
-        for b in acc:
-            if b["asset"]=="USDT":
-                usdt = float(b["free"])
-        state["capital"] = usdt
-    except Exception as e:
-        logging.error(f"[SYNC BAL ERROR] {e}")
+    def buy(self, symbol, usdt_amount):
+        """
+        Achète en MARKET pour un certain montant USDT.
+        Retourne (qty_effectivement_achetee, avg_px).
+        """
+        try:
+            # 1) Récupérer le dernier prix
+            ticker = self.client.get_symbol_ticker(symbol=f"{symbol}USDT")
+            px = float(ticker["price"])
+            raw_qty = usdt_amount / px
+            real_qty = round(raw_qty, 5)
+            if real_qty<=0:
+                return (0.0, 0.0)
 
+            order = self.client.create_order(
+                symbol=f"{symbol}USDT",
+                side="BUY",
+                type="MARKET",
+                quantity=real_qty
+            )
+            fill_sum = 0.0
+            fill_qty = 0.0
+            for fill in order.get("fills", []):
+                fxp  = float(fill["price"])
+                fxq  = float(fill["qty"])
+                fill_sum += fxp*fxq
+                fill_qty += fxq
+            avg_px = fill_sum/fill_qty if fill_qty>0 else px
+            logging.info(f"[BUY] {symbol} => qty={fill_qty}, avg_px={avg_px}")
+            return (fill_qty, avg_px)
+        except Exception as e:
+            logging.error(f"[BUY ERROR] {symbol} => {e}")
+            return (0.0, 0.0)
