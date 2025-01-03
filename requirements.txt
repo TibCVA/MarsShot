@@ -6,4 +6,4 @@ joblib
 python-binance
 PyYAML
 ta
-
+imbalanced-learn
