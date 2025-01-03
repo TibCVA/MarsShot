@@ -5,8 +5,23 @@
 lunarcrush:
   api_key: "85zhfo9yl9co22cl7kw2sucossm59awchvwf8s8ub"
 
+# On n'utilise plus Coinbase => retire ou laisse en pass
 coinbase:
   pass: "none"
+
+# Paramètres d'échange
+exchanges:
+  binance:
+    symbol_mapping:
+      "FET": "FET"
+      "AGIX": "AGIX"
+      "ARB": "ARB"
+      "OP": "OP"
+      "INJ": "INJ"
+      "RNDR": "RNDR"
+      "MANA": "MANA"
+      "SAND": "SAND"
+      # Si besoin, ajoute d'autres mappings => "MYTOKEN_LC": "MYTOKEN_BNB"
 
 binance_api:
   api_key: "MLgAZHirgL3NyfYu8q2ReV9fSRmwOW17fQ3wKC99EcsXgaJUlIAlQ2afQ9UQ1rfU"
