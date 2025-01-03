@@ -40,5 +40,5 @@ logging:
   file: "bot.log"
 
 telegrams:
-  bot_token: "TON_TOKEN_ICI"
+  bot_token: "7703664631:AAGC6G5sw7gMnLdQ5IdxGrymdAQEvHNflqo"
   chat_id: "7703664631"
