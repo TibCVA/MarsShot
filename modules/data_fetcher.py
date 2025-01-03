@@ -1,145 +1,151 @@
 import requests
 import logging
 import time
-import os
 import pandas as pd
 from datetime import datetime, timedelta
+import os
 
-from .indicators import compute_indicators
+from indicators import compute_rsi_macd_atr
 
-def fetch_data_for_all_tokens(tokens_list, config):
+# ==========================
+# Coinbase (intraday prices)
+# ==========================
+COINBASE_SPOT_URL = "https://api.coinbase.com/v2/prices/XXX-USD/spot"
+
+def fetch_current_price_from_coinbase(symbol:str):
     """
-    Renvoie un dict:
-      { "SYM": { "features": { "price", "volume", "market_cap", "holders", "sentiment_score", "ATR", "RSI", "MACD" } } }
+    Récupère le prix spot en USD depuis l'endpoint public Coinbase.
+    symbol = "BTC", "ETH", ...
+    """
+    url = COINBASE_SPOT_URL.replace("XXX", symbol)
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code != 200:
+            logging.warning(f"[Coinbase Error] {symbol} => HTTP {r.status_code}")
+            return None
+        j = r.json()
+        return float(j["data"]["amount"])
+    except Exception as e:
+        logging.error(f"[Coinbase Exception] {symbol} => {e}")
+        return None
+
+def fetch_prices_for_symbols(symbols):
+    """
+    Récupère un dict { 'BTC': 12345.6, 'ETH': 234.5, ... }
     """
     out = {}
-    days_history = config["risk"].get("days_history", 30)
-
-    for tk in tokens_list:
-        sym = tk["symbol"]
-        cmc_id = tk.get("cmc_id", None)
-        chain = tk.get("nansen_chain", None)
-        contract = tk.get("nansen_contract", None)
-        lunar_sym = tk.get("lunar_symbol", None)
-
-        # 1) CoinMarketCap => hist
-        df_hist = fetch_coinmarketcap_history(cmc_id, days_history, config)
-        if df_hist is None or df_hist.empty:
-            logging.warning(f"No CMC data => skip {sym}")
-            continue
-
-        df_indic = compute_indicators(df_hist)
-        last_row = df_indic.iloc[-1]
-
-        # 2) holders => Nansen
-        holders_val = fetch_nansen_holders(chain, contract, config)
-        if holders_val is None:
-            holders_val = 0
-
-        # 3) sentiment => LunarCrush
-        senti_val = fetch_lunar_sentiment(lunar_sym, config)
-        if senti_val is None:
-            senti_val = 0.5
-
-        feats = {
-            "price": last_row["close"],
-            "volume": last_row["volume"],
-            "market_cap": last_row["market_cap"],
-            "holders": holders_val,
-            "sentiment_score": senti_val,
-            "ATR": last_row.get("ATR",0),
-            "RSI": last_row.get("RSI",50),
-            "MACD": last_row.get("MACD",0)
-        }
-        out[sym] = {"features": feats}
-        time.sleep(2)  # anti rate-limit
+    for sym in symbols:
+        px = fetch_current_price_from_coinbase(sym)
+        if px is not None:
+            out[sym] = px
+        time.sleep(1)
     return out
 
-def fetch_coinmarketcap_history(cmc_id, days, config):
-    if not cmc_id:
-        return None
-    key = config["coinmarketcap"]["api_key"]
-    end_date = datetime.utcnow()
-    start_date = end_date - timedelta(days=days)
+# ==========================
+# LunarCrush (daily fetch)
+# ==========================
 
-    url = "https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/historical"
-    headers = {
-        "X-CMC_PRO_API_KEY": key,
-        "Accepts": "application/json"
+def fetch_last_day_from_lunarcrush(symbol, api_key):
+    """
+    Récupère ~2 jours sur LunarCrush (bucket=day, interval=2d).
+    Calcule RSI/MACD/ATR, renvoie la dernière ligne (dict) => features pour l'IA
+    {
+      'close':..., 'volume':..., 'market_cap':...,
+      'rsi':..., 'macd':..., 'atr':...,
+      'btc_daily_change':..., 'eth_daily_change':...
     }
+    Retourne None si échec ou si aucune ligne exploitable.
+    """
+    df_token = fetch_lc_raw(symbol, api_key)
+    if df_token is None or df_token.empty:
+        return None
+
+    # On calcule RSI/MACD/ATR
+    df_ind = compute_rsi_macd_atr(df_token)
+    if df_ind is None or df_ind.empty:
+        return None
+
+    # On merge btc, eth daily change sur la date la + récente
+    # => On récupère la plus récente date
+    last_date = df_ind["date"].max()
+
+    # Récup data BTC / ETH sur 2 jours, on calcule le daily change
+    df_btc = fetch_lc_raw("BTC", api_key, days=2)
+    df_eth = fetch_lc_raw("ETH", api_key, days=2)
+    if df_btc is not None and not df_btc.empty:
+        df_btc = compute_daily_change(df_btc, "btc_daily_change")
+    if df_eth is not None and not df_eth.empty:
+        df_eth = compute_daily_change(df_eth, "eth_daily_change")
+
+    # Merge
+    # On ne merge qu'une date => on fait un "left join" sur la date
+    df_merged = df_ind.merge(df_btc[["date","btc_daily_change"]], on="date", how="left") if df_btc is not None else df_ind
+    df_merged = df_merged.merge(df_eth[["date","eth_daily_change"]], on="date", how="left") if df_eth is not None else df_merged
+
+    row = df_merged[df_merged["date"]==last_date].copy()
+    if row.empty:
+        # Pas de ligne
+        return None
+
+    # On fabrique un dict de features
+    # Ordre identique à train_model => [close, volume, market_cap, rsi, macd, atr, btc_daily_change, eth_daily_change]
+    r = row.iloc[0]  # on prend la première (et unique) ligne
+    feats = {
+        "close": r.get("close", 0.0),
+        "volume": r.get("volume", 0.0),
+        "market_cap": r.get("market_cap", 0.0),
+        "rsi": r.get("rsi", 50.0),
+        "macd": r.get("macd", 0.0),
+        "atr": r.get("atr", 0.0),
+        "btc_daily_change": r.get("btc_daily_change", 0.0),
+        "eth_daily_change": r.get("eth_daily_change", 0.0)
+    }
+    return feats
+
+def fetch_lc_raw(symbol, api_key, days=2):
+    """
+    Récupère 'days' jours max (bucket=day, interval=?).
+    Pour être sûr d'avoir la dernière bougie daily, on set interval=7d ou 2d c'est suffisant.
+    """
+    base_url = f"https://lunarcrush.com/api4/public/coins/{symbol}/time-series/v2"
     params = {
-        "id": str(cmc_id),
-        "time_start": start_date.isoformat(),
-        "time_end": end_date.isoformat(),
-        "interval": "1d",
-        "count": days,
-        "convert": "USD"
+        "key": api_key,
+        "bucket": "day",
+        "interval": f"{days}d"
     }
     try:
-        r = requests.get(url, headers=headers, params=params)
+        r = requests.get(base_url, params=params, timeout=30)
+        if r.status_code != 200:
+            logging.warning(f"[LC Raw] {symbol} => HTTP {r.status_code}")
+            return None
         j = r.json()
         if "data" not in j or not j["data"]:
             return None
-        quotes = j["data"]["quotes"]
-        if not quotes:
-            return None
         rows = []
-        for q in quotes:
-            t = q["timestamp"]
-            dd = datetime.fromisoformat(t.replace("Z",""))
-            usd = q["quote"].get("USD", {})
-            o = usd.get("open", None)
-            h = usd.get("high", None)
-            lo = usd.get("low", None)
-            c = usd.get("close", None)
-            vol = usd.get("volume", None)
-            mc = usd.get("market_cap", None)
-            if (o is None) or (h is None) or (lo is None) or (c is None):
+        for point in j["data"]:
+            ts = point.get("time")
+            if not ts:
                 continue
-            rows.append([dd,o,h,lo,c,vol,mc])
+            dt_utc = datetime.utcfromtimestamp(ts)
+            o  = point.get("open")
+            c  = point.get("close")
+            hi = point.get("high")
+            lo = point.get("low")
+            vol = point.get("volume_24h")
+            mc  = point.get("market_cap")
+            rows.append([dt_utc,o,hi,lo,c,vol,mc])
         df = pd.DataFrame(rows, columns=["date","open","high","low","close","volume","market_cap"])
         df.sort_values("date", inplace=True)
         df.reset_index(drop=True, inplace=True)
         return df
     except Exception as e:
-        logging.error(f"[CMC ERROR] {cmc_id} => {e}")
+        logging.error(f"[fetch_lc_raw Error] {symbol} => {e}")
         return None
 
-def fetch_nansen_holders(chain, contract, config):
-    if not chain or not contract:
-        return None
-    key = config["nansen"]["api_key"]
-    url = f"https://api.nansen.ai/tokens/{chain}/{contract}/holders"
-    headers = {"X-API-KEY": key}
-    try:
-        r = requests.get(url, headers=headers)
-        j = r.json()
-        if "data" in j and "holders" in j["data"]:
-            return j["data"]["holders"]
-        return None
-    except:
-        return None
-
-def fetch_lunar_sentiment(symbol, config):
-    if not symbol:
-        return None
-    key = config["lunarcrush"]["api_key"]
-    url = f"https://lunarcrush.com/api2?symbol={symbol}&data=market"
-    headers = {"Authorization": f"Bearer {key}"}
-    try:
-        r = requests.get(url, headers=headers)
-        j = r.json()
-        if "data" not in j or not j["data"]:
-            return None
-        dd = j["data"][0]
-        sc = dd.get("social_score", 50)
-        maxi = max(sc,100)
-        val = sc/maxi
-        if val>1: val=1
-        return val
-    except:
-        return None
-
-def is_global_crash(config):
-    return False
-
+def compute_daily_change(df, col_name):
+    df = df.copy()
+    df = df.sort_values("date").reset_index(drop=True)
+    df["prev_close"] = df["close"].shift(1)
+    df[col_name] = (df["close"] / df["prev_close"] - 1).replace([float("inf"), -float("inf")], None)
+    df.drop(columns=["prev_close"], inplace=True)
+    return df
