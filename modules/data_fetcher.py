@@ -69,7 +69,7 @@ def fetch_last_day_from_lunarcrush(symbol, api_key):
     Calcule RSI/MACD/ATR, renvoie la dernière ligne (dict) => features pour l'IA
     {
       'close', 'volume', 'market_cap', 'rsi', 'macd', 'atr',
-      'btc_daily_change', 'eth_daily_change'
+      'btc_daily_change', 'eth_daily_change', 'sol_daily_change'
     }
     """
     df_token = fetch_lc_raw(symbol, api_key)
@@ -82,19 +82,24 @@ def fetch_last_day_from_lunarcrush(symbol, api_key):
 
     last_date = df_ind["date"].max()
 
-    # Récup btc / eth sur 2 jours
+    # Récup btc / eth / sol sur 2 jours
     df_btc = fetch_lc_raw("BTC", api_key, days=2)
     df_eth = fetch_lc_raw("ETH", api_key, days=2)
+    df_sol = fetch_lc_raw("SOL", api_key, days=2)
     if df_btc is not None and not df_btc.empty:
         df_btc = compute_daily_change(df_btc, "btc_daily_change")
     if df_eth is not None and not df_eth.empty:
         df_eth = compute_daily_change(df_eth, "eth_daily_change")
+    if df_sol is not None and not df_sol.empty:
+        df_sol = compute_daily_change(df_sol, "sol_daily_change")
 
     df_merged = df_ind
     if df_btc is not None:
         df_merged = df_merged.merge(df_btc[["date","btc_daily_change"]], on="date", how="left")
     if df_eth is not None:
         df_merged = df_merged.merge(df_eth[["date","eth_daily_change"]], on="date", how="left")
+    if df_sol is not None:
+        df_merged = df_merged.merge(df_sol[["date","sol_daily_change"]], on="date", how="left")
 
     row = df_merged[df_merged["date"]==last_date].copy()
     if row.empty:
@@ -109,7 +114,8 @@ def fetch_last_day_from_lunarcrush(symbol, api_key):
         "macd": r.get("macd", 0.0),
         "atr": r.get("atr", 0.0),
         "btc_daily_change": r.get("btc_daily_change", 0.0),
-        "eth_daily_change": r.get("eth_daily_change", 0.0)
+        "eth_daily_change": r.get("eth_daily_change", 0.0),
+        "sol_daily_change": r.get("sol_daily_change", 0.0)
     }
     return feats
 
