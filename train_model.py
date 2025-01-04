@@ -148,12 +148,12 @@ def main():
     }
 
     from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
-    cv = StratifiedKFold(n_splits=7, shuffle=True, random_state=42)
+    cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
 
     search = RandomizedSearchCV(
         estimator=pipe,
         param_distributions=param_distributions,
-        n_iter=60,
+        n_iter=70,
         scoring="f1",
         n_jobs=-1,
         cv=cv,
