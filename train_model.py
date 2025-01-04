@@ -86,7 +86,7 @@ def main():
         "rsi", "macd", "atr",
         # Ajout si vous le jugez pertinent :
         "btc_daily_change", 
-        "eth_daily_change"
+        "eth_daily_change", "sol_daily_change"
     ]
     target = "label"
 
