@@ -494,6 +494,14 @@ def main():
         df_eth = df_eth[["date","eth_daily_change"]]
     else:
         df_eth = pd.DataFrame(columns=["date","eth_daily_change"])
+        
+        # 2) Récup data SOL + daily change
+    df_sol = fetch_lunar_data("SOL")
+    if df_sol is not None and not df_sol.empty:
+        df_sol = compute_daily_change(df_sol, "sol_daily_change")
+        df_sol = df_sol[["date","sol_daily_change"]]
+    else:
+        df_sol = pd.DataFrame(columns=["date","sol_daily_change"])
 
     # 3) Boucle sur altcoins
     from indicators import compute_rsi_macd_atr
@@ -527,7 +535,11 @@ def main():
         merged = pd.merge(df_ind, df_btc, on="date", how="left")
         # Merge ETH
         merged = pd.merge(merged, df_eth, on="date", how="left")
+        # Merge SOL
+        merged = pd.merge(merged, df_sol, on="date", how="left")
 
+        
+        
         all_dfs.append(merged)
 
         # Anti rate-limit
@@ -541,7 +553,7 @@ def main():
             "galaxy_score","alt_rank","sentiment",
             "rsi","macd","atr",
             "label","symbol",
-            "btc_daily_change","eth_daily_change"
+            "btc_daily_change","eth_daily_change","sol_daily_change"
         ]
         df_empty = pd.DataFrame(columns=columns)
         df_empty.to_csv(OUTPUT_CSV, index=False)
