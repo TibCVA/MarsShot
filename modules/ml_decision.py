@@ -78,15 +78,19 @@ def get_probability_for_symbol(symbol: str) -> Optional[float]:
         logging.warning(f"[{symbol}] => after cleaning => empty => prob=None")
         return None
 
-    # 3) On merge BTC / ETH daily_change
+    # 3) On merge BTC / ETH / SOL daily_change
     df_btc = fetch_lunar_data("BTC")
     df_btc = compute_daily_change(df_btc, "btc_daily_change") if (df_btc is not None and not df_btc.empty) else pd.DataFrame(columns=["date","btc_daily_change"])
 
     df_eth = fetch_lunar_data("ETH")
     df_eth = compute_daily_change(df_eth, "eth_daily_change") if (df_eth is not None and not df_eth.empty) else pd.DataFrame(columns=["date","eth_daily_change"])
 
+    df_sol = fetch_lunar_data("SOL")
+    df_sol = compute_daily_change(df_sol, "sol_daily_change") if (df_sol is not None and not df_sol.empty) else pd.DataFrame(columns=["date","sol_daily_change"])
+
     merged = pd.merge(df_indic, df_btc, on="date", how="left")
     merged = pd.merge(merged, df_eth, on="date", how="left")
+    merged = pd.merge(merged, df_sol, on="date", how="left")
 
     # 4) Dernière ligne
     merged.sort_values("date", inplace=True)
@@ -100,7 +104,7 @@ def get_probability_for_symbol(symbol: str) -> Optional[float]:
         "close", "volume", "market_cap",
         "galaxy_score", "alt_rank", "sentiment",
         "rsi", "macd", "atr",
-        "btc_daily_change", "eth_daily_change"
+        "btc_daily_change", "eth_daily_change", "sol_daily_change"
     ]
     if last_row[needed_cols].isnull().any():
         # Si l'une est NaN => prob=None
@@ -119,7 +123,8 @@ def get_probability_for_symbol(symbol: str) -> Optional[float]:
         last_row["macd"],
         last_row["atr"],
         last_row["btc_daily_change"],
-        last_row["eth_daily_change"]
+        last_row["eth_daily_change"],
+        last_row["sol_daily_change"]
     ]).reshape(1, -1)
 
     # 7) predict_proba
