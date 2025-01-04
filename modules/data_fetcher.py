@@ -65,7 +65,7 @@ def fetch_prices_for_symbols(symbols):
 #########################
 def fetch_last_day_from_lunarcrush(symbol, api_key):
     """
-    Récupère ~2 jours sur LunarCrush (bucket=day, interval=2d).
+    Récupère 30 jours sur LunarCrush (bucket=day, interval=30d).
     Calcule RSI/MACD/ATR, renvoie la dernière ligne (dict) => features pour l'IA
     {
       'close', 'volume', 'market_cap', 'rsi', 'macd', 'atr',
@@ -82,7 +82,7 @@ def fetch_last_day_from_lunarcrush(symbol, api_key):
 
     last_date = df_ind["date"].max()
 
-    # Récup btc / eth / sol sur 2 jours
+    # Récup btc / eth / sol sur 30 jours
     df_btc = fetch_lc_raw("BTC", api_key, days=2)
     df_eth = fetch_lc_raw("ETH", api_key, days=2)
     df_sol = fetch_lc_raw("SOL", api_key, days=2)
@@ -119,7 +119,7 @@ def fetch_last_day_from_lunarcrush(symbol, api_key):
     }
     return feats
 
-def fetch_lc_raw(symbol, api_key, days=2):
+def fetch_lc_raw(symbol, api_key, days=30):
     base_url = f"https://lunarcrush.com/api4/public/coins/{symbol}/time-series/v2"
     params = {
         "key": api_key,
