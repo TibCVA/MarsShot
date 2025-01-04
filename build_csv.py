@@ -346,7 +346,27 @@ TOKENS = [
     {"symbol": "STRX"},
     {"symbol": "stETH"},
     {"symbol": "CTC"},
-    {"symbol": "WBTC"}
+    {"symbol": "WBTC"},
+    {"symbol": "PATRIOT"},
+    {"symbol": "NUMO"},
+    {"symbol": "LOFI"},
+    {"symbol": "ELIZA"},
+    {"symbol": "AVA"},
+    {"symbol": "AXOL"},
+    {"symbol": "UROA"},
+    {"symbol": "KOMAINU"},
+    {"symbol": "DASHA"},
+    {"symbol": "LUNA"},
+    {"symbol": "MEMESAI"},
+    {"symbol": "MOO"},
+    {"symbol": "DEBRIDGE"},
+    {"symbol": "PUFFER"},
+    {"symbol": "SNS"},
+    {"symbol": "TOKENBOT"},
+    {"symbol": "CHEEMS"},
+    {"symbol": "ORDERLY"},
+    {"symbol": "ZIRCUIT"},
+    {"symbol": "CARV"}
 ]
 
 
