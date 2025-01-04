@@ -148,12 +148,12 @@ def main():
     }
 
     from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
-    cv = StratifiedKFold(n_splits=8, shuffle=True, random_state=42)
+    cv = StratifiedKFold(n_splits=7, shuffle=True, random_state=42)
 
     search = RandomizedSearchCV(
         estimator=pipe,
         param_distributions=param_distributions,
-        n_iter=60,
+        n_iter=20,
         scoring="f1",
         n_jobs=-1,
         cv=cv,
@@ -161,7 +161,7 @@ def main():
         random_state=42
     )
 
-    logging.info("Lancement RandomizedSearchCV (8 folds, 60 itérations).")
+    logging.info("Lancement RandomizedSearchCV (7 folds, 20 itérations).")
     print("[INFO] Recherche d'hyperparamètres => patience ...")
     search.fit(X_train, y_train)
 
