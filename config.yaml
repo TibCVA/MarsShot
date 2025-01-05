@@ -39,7 +39,7 @@ tokens_daily:
   - "SAND"
 
 strategy:
-  capital_initial: 1000.0
+  capital_initial: 821.0
   buy_threshold: 0.8
   sell_threshold: 0.25
   stop_loss_pct: 0.30
