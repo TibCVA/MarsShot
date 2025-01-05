@@ -23,7 +23,13 @@ except ImportError:
         pass  # fallback si pas de telegram_integration
 
 def main():
-    # Lancer le bot Telegram dans un thread (optionnel)
+    """
+    Boucle principale du bot de trading.
+    - Tourne en continu, exécute daily_update à 00h30 UTC, intraday check toutes X secondes.
+    - Gère la persistance dans bot_state.json via load_state/save_state.
+    - Lance le bot telegram (run_telegram_bot) dans un thread, si dispo.
+    """
+    # Lancer le bot Telegram dans un thread
     t = threading.Thread(target=run_telegram_bot, daemon=True)
     t.start()
 
@@ -34,6 +40,7 @@ def main():
     with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
+    # Init logging
     logging.basicConfig(
         filename=config["logging"]["file"],
         level=logging.INFO,
@@ -41,6 +48,7 @@ def main():
     )
     logging.info("[BOT] Started main loop.")
 
+    # Charger état + init trade executor
     state = load_state(config["strategy"]["capital_initial"])
     bexec = TradeExecutor(
         api_key=config["binance_api"]["api_key"],
@@ -70,8 +78,8 @@ def main():
                 save_state(state)
 
             # Intraday check
-            if (time.time() - state.get("last_risk_check_ts", 0)
-               ) >= config["strategy"]["check_interval_seconds"]:
+            last_check = state.get("last_risk_check_ts", 0)
+            if (time.time() - last_check) >= config["strategy"]["check_interval_seconds"]:
                 
                 symbols_in_portfolio = list(state["positions"].keys())
                 if symbols_in_portfolio:
@@ -87,10 +95,16 @@ def main():
         time.sleep(10)
 
 def daily_update(state, config, bexec):
+    """
+    Appelé 1 fois/jour (à 00h30 UTC).
+    1) SELL => si prob < sell_threshold (sauf big_gain_exception_pct).
+    2) BUY => max 5 tokens (ceux qui ont la plus forte prob >= buy_threshold),
+              en répartissant le capital usdt disponible.
+    """
     tokens = config["tokens_daily"]
     strat  = config["strategy"]
 
-    # SELL logic
+    # --- SELL LOGIC ---
     for sym in list(state["positions"].keys()):
         prob = get_probability_for_symbol(sym)
         if prob is None:
@@ -104,7 +118,7 @@ def daily_update(state, config, bexec):
 
             entry_px = state["positions"][sym]["entry_price"]
             ratio = current_px / entry_px
-            # big_gain_exception_pct=4.0 => x4 => skip once
+            # big_gain_exception_pct => skip la vente 1x si ratio >= 4.0 par ex.
             if ratio >= strat["big_gain_exception_pct"] and not state["positions"][sym].get("did_skip_sell_once", False):
                 state["positions"][sym]["did_skip_sell_once"] = True
                 logging.info(f"[DAILY SELL SKIPPED >{strat['big_gain_exception_pct']}x] {sym}, ratio={ratio:.2f}, prob={prob:.2f}")
@@ -116,27 +130,30 @@ def daily_update(state, config, bexec):
 
     save_state(state)
 
-    # BUY logic
+    # --- BUY LOGIC ---
     buy_candidates = []
     for sym in tokens:
-        # si déjà en portefeuille => skip
         if sym in state["positions"]:
-            continue
-
+            continue  # déjà en portefeuille => skip
         prob = get_probability_for_symbol(sym)
         if prob is None:
             continue
-
         if prob >= strat["buy_threshold"]:
-            buy_candidates.append(sym)
+            buy_candidates.append((sym, prob))
+
+    # On ne veut acheter que 5 tokens max => on trie par prob desc
+    # ex: buy_candidates = [("FET",0.82), ("AGIX",0.88), ...]
+    buy_candidates.sort(key=lambda x: x[1], reverse=True)
+    # On garde top 5
+    buy_candidates = buy_candidates[:5]
 
     if buy_candidates and state["capital_usdt"] > 0:
+        # On répartit capital_usdt sur len(buy_candidates)
         alloc = state["capital_usdt"] / len(buy_candidates)
-        for sym in buy_candidates:
-            # on exécute l'achat
+        for sym, pb in buy_candidates:
             qty_bought, avg_px = bexec.buy(sym, alloc)
             if qty_bought>0:
-                # on créé la position
+                # On ajoute la position
                 state["positions"][sym] = {
                     "qty": qty_bought,
                     "entry_price": avg_px,
@@ -145,9 +162,9 @@ def daily_update(state, config, bexec):
                     "max_price": None
                 }
                 state["capital_usdt"] -= alloc
-                logging.info(f"[DAILY BUY] {sym}, prob>= {strat['buy_threshold']}, cost={alloc:.2f}, px={avg_px:.4f}")
-
+                logging.info(f"[DAILY BUY] {sym}, prob={pb:.2f}>= {strat['buy_threshold']}, cost={alloc:.2f}, px={avg_px:.4f}")
     save_state(state)
+
 
 if __name__=="__main__":
     main()
