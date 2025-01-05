@@ -51,8 +51,8 @@ def main():
     5) Re-train sur 100% => final_model, rapport in-sample global.
     6) Sauvegarde final_model => model.pkl
     """
-    # --n_iter <int> (sinon 50)
-    n_iter = 50
+    # --n_iter <int> (sinon 35)
+    n_iter = 35
     for i, arg in enumerate(sys.argv):
         if arg == "--n_iter" and (i+1 < len(sys.argv)):
             try:
