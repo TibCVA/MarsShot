@@ -60,7 +60,7 @@ jobs:
 
       - name: Train Model (Part 1)
         run: |
-          python train_model.py --n_iter 30
+          python train_model.py --n_iter 50
           mv model.pkl model_part1.pkl
 
       - name: Show Logs
@@ -101,7 +101,7 @@ jobs:
 
       - name: Train Model (Part 2)
         run: |
-          python train_model.py --n_iter 30
+          python train_model.py --n_iter 50
           mv model.pkl model_part2.pkl
 
       - name: Show Logs
@@ -142,7 +142,7 @@ jobs:
 
       - name: Train Model (Part 3)
         run: |
-          python train_model.py --n_iter 30
+          python train_model.py --n_iter 50
           mv model.pkl model_part3.pkl
 
       - name: Show Logs
