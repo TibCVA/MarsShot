@@ -154,4 +154,4 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: model_part3
-          path: model_part3.pkl
+          path: model_part3.pkl 
