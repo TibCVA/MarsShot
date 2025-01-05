@@ -29,14 +29,27 @@ binance_api:
 
 # Tokens qu'on suit en daily
 tokens_daily:
-  - "FET"
-  - "AGIX"
-  - "ARB"
-  - "OP"
-  - "INJ"
-  - "RNDR"
-  - "MANA"
-  - "SAND"
+  - "HIVE"
+  - "ACT"
+  - "1000PEPE"
+  - "PENGU"
+  - "ENA"
+  - "SUI"
+  - "MOVE"
+  - "PNUT"
+  - "AGLD"
+  - "AI16Z"
+  - "WIF"
+  - "LINK"
+  - "STEEM"
+  - "STG"
+  - "HBAR"
+  - "XLM"
+  - "GOAT"
+  - "PHA"
+  - "LQTY"
+  - "BB"
+  - "AAVE"
 
 strategy:
   capital_initial: 821.0
