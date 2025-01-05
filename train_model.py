@@ -59,8 +59,8 @@ def main():
     8) joblib.dump(final_model, model.pkl)
     """
 
-    # Récup param --n_iter (sinon 30)
-    n_iter = 30
+    # Récup param --n_iter (sinon 50)
+    n_iter = 50
     for i, arg in enumerate(sys.argv):
         if arg == "--n_iter" and i+1 < len(sys.argv):
             try:
