@@ -61,7 +61,6 @@ jobs:
       - name: Train Model
         run: |
           python train_model.py --n_iter 30
-          mv model.pkl model.pkl
 
       - name: Show Logs
         run: |
