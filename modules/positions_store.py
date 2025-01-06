@@ -5,9 +5,15 @@ STATE_FILE = "bot_state.json"
 
 def load_state():
     """
-    On ne stocke plus capital_usdt ni positions, 
-    seulement un champ "positions_meta": { "BNB": { "entry_px":..., ...}, ...}
-    + did_daily_update_today, last_risk_check_ts, etc.
+    Stockage minimal: 
+      {
+        "did_daily_update_today": bool,
+        "last_risk_check_ts": float,
+        "positions_meta": {
+          "BNB": {"entry_px":..., "did_skip_sell_once":..., "partial_sold":..., "max_price":...},
+          ...
+        }
+      }
     """
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r") as f:
@@ -15,8 +21,8 @@ def load_state():
     else:
         st = {
             "did_daily_update_today": False,
-            "last_risk_check_ts": 0,
-            "positions_meta": {}  # store ephemeral info => partial_sold, max_price, ...
+            "last_risk_check_ts": 0.0,
+            "positions_meta": {}
         }
         save_state(st)
         return st
