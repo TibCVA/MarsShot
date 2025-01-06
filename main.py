@@ -8,31 +8,25 @@ import yaml
 import os
 import threading
 
-from modules.positions_store import load_state, save_state
-from modules.data_fetcher import fetch_prices_for_symbols, fetch_current_price_from_binance
-from modules.risk_manager import update_positions_in_intraday
 from modules.trade_executor import TradeExecutor
 from modules.utils import send_telegram_message
 from modules.ml_decision import get_probability_for_symbol
-
-# Optionnel => si tu as un telegram_integration.py
+from modules.positions_store import load_state, save_state
+from modules.risk_manager import intraday_check_real
+# Si vous avez un telegram_integration => on l'importe
 try:
-    from telegram_integration import run_telegram_bot
+    from modules.telegram_integration import run_telegram_bot
 except ImportError:
     def run_telegram_bot():
-        pass  # fallback si pas de telegram_integration
+        pass  # pas de fallback, juste vide
 
 def main():
     """
-    Boucle principale du bot de trading.
-    - Tourne en continu, exécute daily_update à 13h00 UTC, intraday check toutes X secondes.
-    - Gère la persistance dans bot_state.json via load_state/save_state.
-    - Lance le bot telegram (run_telegram_bot) dans un thread, si dispo.
+    Boucle principale du bot de trading en mode 100% "live" sur Binance.
+    - A 13h00 UTC => daily_update(...) => SELL/BUY en direct sur Binance
+    - Intraday => toutes les X sec => intraday_check_real(...) => partial/trailing
+    - Stockage minimal local : bot_state.json => pour did_skip_sell_once, partial_sold, max_price
     """
-    # Lancer le bot Telegram dans un thread
-    t = threading.Thread(target=run_telegram_bot, daemon=True)
-    t.start()
-
     if not os.path.exists("config.yaml"):
         print("[ERREUR] config.yaml manquant.")
         return
@@ -40,16 +34,21 @@ def main():
     with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
-    # Init logging
     logging.basicConfig(
         filename=config["logging"]["file"],
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s"
     )
-    logging.info("[BOT] Started main loop.")
+    logging.info("[MAIN] Starting main loop (LIVE).")
 
-    # Charger état + init trade executor
-    state = load_state(config["strategy"]["capital_initial"])
+    # Telegram bot dans un thread
+    t = threading.Thread(target=run_telegram_bot, daemon=True)
+    t.start()
+
+    # charge state (juste pour ephemeral metadata)
+    state = load_state()  # plus de param capital_initial
+
+    # init trade executor
     bexec = TradeExecutor(
         api_key=config["binance_api"]["api_key"],
         api_secret=config["binance_api"]["api_secret"]
@@ -59,111 +58,129 @@ def main():
         try:
             now_utc = datetime.datetime.utcnow()
 
-            # 13h00 => daily update
+            # daily update => ex. 13h00 UTC
             if (
-                now_utc.hour == config["strategy"]["daily_update_hour_utc"]  # <-- doit être 13 dans config.yaml
-                and now_utc.minute >= 0
+                now_utc.hour == config["strategy"]["daily_update_hour_utc"]
+                and now_utc.minute == 0
                 and not state.get("did_daily_update_today", False)
             ):
-                daily_update(state, config, bexec)
+                daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
 
             # reset flag avant 13h
             if (
-                now_utc.hour == config["strategy"]["daily_update_hour_utc"]  # <-- doit être 13
+                now_utc.hour == config["strategy"]["daily_update_hour_utc"]
                 and now_utc.minute < 0
             ):
                 state["did_daily_update_today"] = False
                 save_state(state)
 
-            # Intraday check
+            # intraday check
             last_check = state.get("last_risk_check_ts", 0)
             if (time.time() - last_check) >= config["strategy"]["check_interval_seconds"]:
-                
-                symbols_in_portfolio = list(state["positions"].keys())
-                if symbols_in_portfolio:
-                    px_map = fetch_prices_for_symbols(symbols_in_portfolio)
-                    update_positions_in_intraday(state, px_map, config, bexec)
-                    save_state(state)
-
+                intraday_check_real(state, bexec, config)
                 state["last_risk_check_ts"] = time.time()
+                save_state(state)
 
         except Exception as e:
             logging.error(f"[MAIN ERROR] {e}")
 
         time.sleep(10)
 
-def daily_update(state, config, bexec):
+def daily_update_live(state, config, bexec):
     """
-    Appelé 1 fois/jour (à 13h00 UTC).
-    1) SELL => si prob < sell_threshold (sauf big_gain_exception_pct).
-    2) BUY => max 5 tokens (ceux qui ont la plus forte prob >= buy_threshold),
-              en répartissant le capital usdt disponible.
+    1) SELL => si prob < sell_threshold (sauf skip si ratio >= big_gain_exception_pct).
+    2) BUY => max 5 tokens (plus forte prob >= buy_threshold)
+       On regarde le solde USDT sur Binance pour savoir combien on peut allouer.
     """
+    logging.info("[DAILY UPDATE] Starting daily_update (live).")
     tokens = config["tokens_daily"]
     strat  = config["strategy"]
 
-    # --- SELL LOGIC ---
-    for sym in list(state["positions"].keys()):
-        prob = get_probability_for_symbol(sym)
+    # SELL logic (live)
+    # => on récup le solde:  client.get_account() + pour chaque coin > 0 (sauf USDT), check prob
+    # => on applique la skip big gain
+    account_info = bexec.client.get_account()
+    balances = account_info["balances"]
+    # On fait un dict { "FET": qty, "AGIX": qty, ... }, ignoring USDT
+    holdings = {}
+    for b in balances:
+        asset = b["asset"]
+        free  = float(b["free"])
+        locked= float(b["locked"])
+        qty   = free + locked
+        if qty>0 and asset != "USDT":
+            holdings[asset] = qty
+
+    # check each holding => prob => SELL if prob<sell_threshold
+    for asset, real_qty in holdings.items():
+        prob = get_probability_for_symbol(asset)
         if prob is None:
-            logging.info(f"[DAILY SELL] {sym} => prob=None => skip")
+            logging.info(f"[DAILY SELL] {asset} => prob=None => skip.")
             continue
 
         if prob < strat["sell_threshold"]:
-            current_px = fetch_current_price_from_binance(sym)
-            if not current_px:
-                continue
+            # check ratio => on calcule ratio = current_px / entry_px ??? 
+            # On n'a pas d'entry_px local => on va lire ephemeral state
+            meta = state["positions_meta"].get(asset, {})
+            did_skip = meta.get("did_skip_sell_once", False)
 
-            entry_px = state["positions"][sym]["entry_price"]
-            ratio = current_px / entry_px
-            # big_gain_exception_pct => skip la vente 1x si ratio >= 4.0 par ex.
-            if ratio >= strat["big_gain_exception_pct"] and not state["positions"][sym].get("did_skip_sell_once", False):
-                state["positions"][sym]["did_skip_sell_once"] = True
-                logging.info(f"[DAILY SELL SKIPPED >{strat['big_gain_exception_pct']}x] {sym}, ratio={ratio:.2f}, prob={prob:.2f}")
-            else:
-                liquidation = bexec.sell_all(sym, state["positions"][sym]["qty"])
-                state["capital_usdt"] += liquidation
-                del state["positions"][sym]
-                logging.info(f"[DAILY SELL] {sym}, prob={prob:.2f}, liquidation={liquidation:.2f}")
+            current_px = bexec.get_symbol_price(asset)
+            # on simule "entry_px" ??? => si on n'a pas, on skip big gain ?
+            entry_px = meta.get("entry_px", None)
+            if entry_px:
+                ratio = current_px/ entry_px
+                if ratio >= strat["big_gain_exception_pct"] and not did_skip:
+                    meta["did_skip_sell_once"] = True
+                    logging.info(f"[DAILY SELL SKIP big gain] {asset}, ratio={ratio:.2f}, prob={prob:.2f}")
+                    state["positions_meta"][asset] = meta
+                    continue
+            # sinon, on vend
+            sold_val = bexec.sell_all(asset, real_qty)
+            logging.info(f"[DAILY SELL] {asset}, prob={prob:.2f}, sold_val={sold_val:.2f}")
+            # on supprime la meta
+            if asset in state["positions_meta"]:
+                del state["positions_meta"][asset]
+            save_state(state)
 
-    save_state(state)
+    # BUY logic => tri par prob desc => top5 => on alloue capital USDT
+    # On lit solde USDT reel
+    usdt_balance=0.0
+    for b in balances:
+        if b["asset"]=="USDT":
+            usdt_balance = float(b["free"])+ float(b["locked"])
+            break
 
-    # --- BUY LOGIC ---
-    buy_candidates = []
+    buy_candidates=[]
     for sym in tokens:
-        if sym in state["positions"]:
-            continue  # déjà en portefeuille => skip
-        prob = get_probability_for_symbol(sym)
-        if prob is None:
+        # skip si on a deja le sym
+        if sym in holdings:
             continue
-        if prob >= strat["buy_threshold"]:
+        prob = get_probability_for_symbol(sym)
+        if prob and prob>=strat["buy_threshold"]:
             buy_candidates.append((sym, prob))
 
-    # On ne veut acheter que 5 tokens max => on trie par prob desc
-    buy_candidates.sort(key=lambda x: x[1], reverse=True)
-    # On garde top 5
-    buy_candidates = buy_candidates[:5]
+    buy_candidates.sort(key=lambda x:x[1], reverse=True)
+    buy_candidates = buy_candidates[:5]  # top5
 
-    if buy_candidates and state["capital_usdt"] > 0:
-        # On répartit capital_usdt sur len(buy_candidates)
-        alloc = state["capital_usdt"] / len(buy_candidates)
+    if buy_candidates and usdt_balance>10:  # on met un mini
+        # On repartit => ex. usdt_balance / len(buy_candidates)
+        alloc = usdt_balance/len(buy_candidates)
         for sym, pb in buy_candidates:
             qty_bought, avg_px = bexec.buy(sym, alloc)
             if qty_bought>0:
-                # On ajoute la position
-                state["positions"][sym] = {
-                    "qty": qty_bought,
-                    "entry_price": avg_px,
+                logging.info(f"[DAILY BUY] {sym}, prob={pb:.2f}, cost={alloc:.2f}, px={avg_px:.4f}")
+                # On store la meta => entry_px=avg_px, did_skip_sell_once=False, partial_sold=False, max_price=avg_px
+                state["positions_meta"][sym] = {
+                    "entry_px": avg_px,
                     "did_skip_sell_once": False,
                     "partial_sold": False,
-                    "max_price": None
+                    "max_price": avg_px
                 }
-                state["capital_usdt"] -= alloc
-                logging.info(f"[DAILY BUY] {sym}, prob={pb:.2f}>= {strat['buy_threshold']}, cost={alloc:.2f}, px={avg_px:.4f}")
-    save_state(state)
+                save_state(state)
 
+    logging.info("[DAILY UPDATE] Done daily_update (live).")
 
 if __name__=="__main__":
     main()
