@@ -8,13 +8,14 @@ import yaml
 import os
 import threading
 
-from zoneinfo import ZoneInfo  # <-- Import pour fuseau horaire "Europe/Paris"
+# NOUVEAU => on gère le fuseau horaire
+import pytz  # pip install pytz si nécessaire
 
 from modules.trade_executor import TradeExecutor
 from modules.utils import send_telegram_message
 from modules.ml_decision import get_probability_for_symbol
 from modules.positions_store import load_state, save_state
-from modules.risk_manager import intraday_check_real  # Intraday => live
+from modules.risk_manager import intraday_check_real
 
 try:
     from modules.telegram_integration import run_telegram_bot
@@ -25,9 +26,9 @@ except ImportError:
 def main():
     """
     Boucle principale du bot de trading en mode LIVE.
-    - A 1h00 du matin heure Paris => daily_update_live => SELL/BUY sur Binance
-    - Intraday => intraday_check_real => trailing / stop-loss live
-    - On stocke des métadonnées dans bot_state.json => partial_sold, max_price, ...
+    - Chaque jour à 18h00 heure de Paris => daily_update_live(...) => SELL/BUY 
+    - Intraday => intraday_check_real(...) => trailing/stop-loss live
+    - Stockage local (positions_meta) dans bot_state.json
     """
 
     if not os.path.exists("config.yaml"):
@@ -42,38 +43,36 @@ def main():
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s"
     )
-    logging.info("[MAIN] Starting main loop (LIVE, 1h Paris).")
+    logging.info("[MAIN] Starting main loop (LIVE).")
 
-    # Lancement bot Telegram
     t = threading.Thread(target=run_telegram_bot, daemon=True)
     t.start()
 
-    # Charger le state
     state = load_state()
 
-    # Init trade executor
     bexec = TradeExecutor(
         api_key=config["binance_api"]["api_key"],
         api_secret=config["binance_api"]["api_secret"]
     )
 
+    # Prépare le fuseau de Paris
+    paris_tz = pytz.timezone("Europe/Paris")
+
     while True:
         try:
-            # On prend l'heure locale Paris
-            now_paris = datetime.datetime.now(ZoneInfo("Europe/Paris"))
+            # On calcule l'heure locale de Paris
+            now_paris = datetime.datetime.now(paris_tz)
 
-            # => 01:00 Paris
-            if (
-                now_paris.hour == 1
-                and now_paris.minute == 0
-                and not state.get("did_daily_update_today", False)
-            ):
+            # => Tâche daily à 18h00 PARIS
+            if now_paris.hour == 18 and now_paris.minute == 0 and not state.get("did_daily_update_today", False):
                 daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
 
-            # Reset le flag si on repasse avant 01:00
-            if now_paris.hour < 1:
+            # reset flag => avant 18h => ex. si minute < 59, ou < 30, etc.
+            # On choisit ici => si hour==18, minute<1 => réinitialiser
+            # OU on peut faire => if hour!=18 => reset
+            if now_paris.hour != 18:
                 state["did_daily_update_today"] = False
                 save_state(state)
 
@@ -89,18 +88,19 @@ def main():
 
         time.sleep(10)
 
+
 def daily_update_live(state, config, bexec):
     """
     Achète/Vend en direct => 
      1) SELL si prob<sell_threshold (sauf skip big_gain_exception_pct).
      2) BUY top 5 tokens => en utilisant USDT du compte.
     """
-    logging.info("[DAILY UPDATE] Starting daily_update (live, 1h Paris).")
+    logging.info("[DAILY UPDATE] Starting daily_update (live).")
 
     tokens = config["tokens_daily"]
     strat  = config["strategy"]
 
-    # On récup le solde complet (live)
+    # Récup solde complet => on vend si prob< threshold
     account_info = bexec.client.get_account()
     balances = account_info["balances"]
     holdings = {}
@@ -110,7 +110,7 @@ def daily_update_live(state, config, bexec):
         asset= b["asset"]
         free= float(b["free"])
         locked= float(b["locked"])
-        qty= free+ locked
+        qty= free + locked
         if asset=="USDT":
             usdt_balance= qty
         elif qty>0:
@@ -129,21 +129,20 @@ def daily_update_live(state, config, bexec):
 
             current_px= bexec.get_symbol_price(asset)
             if entry_px:
-                ratio= current_px / entry_px
+                ratio= current_px/ entry_px
                 if ratio>= strat["big_gain_exception_pct"] and not did_skip:
-                    meta["did_skip_sell_once"]= True
+                    meta["did_skip_sell_once"] = True
                     state["positions_meta"][asset]= meta
                     logging.info(f"[DAILY SELL SKIP big gain] {asset}, ratio={ratio:.2f}, prob={prob:.2f}")
                     continue
 
-            # SELL
             sold_val= bexec.sell_all(asset, real_qty)
             logging.info(f"[DAILY SELL LIVE] {asset}, prob={prob:.2f}, sold_val={sold_val:.2f}")
             if asset in state["positions_meta"]:
                 del state["positions_meta"][asset]
             save_state(state)
 
-    # BUY logic => top 5
+    # BUY => top5
     buy_candidates=[]
     for sym in tokens:
         if sym in holdings:
@@ -156,7 +155,7 @@ def daily_update_live(state, config, bexec):
     buy_candidates= buy_candidates[:5]
 
     if buy_candidates and usdt_balance>10:
-        alloc= usdt_balance/ len(buy_candidates)
+        alloc= usdt_balance / len(buy_candidates)
         for sym, pb in buy_candidates:
             qty_bought, avg_px= bexec.buy(sym, alloc)
             if qty_bought>0:
