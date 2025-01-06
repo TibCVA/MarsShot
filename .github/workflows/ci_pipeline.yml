@@ -33,7 +33,7 @@ jobs:
           name: training_data_csv
           path: training_data.csv
 
-  train_part1:
+  train_model:
     runs-on: ubuntu-latest
     needs: [build_and_run]
     steps:
@@ -58,100 +58,18 @@ jobs:
         run: |
           ls -l training_data.csv || echo "No CSV found"
 
-      - name: Train Model (Part 1)
+      - name: Train Model
         run: |
-          python train_model.py --n_iter 35
-          mv model.pkl model_part1.pkl
+          python train_model.py --n_iter 30
+          mv model.pkl model.pkl
 
       - name: Show Logs
         run: |
-          echo "===== TRAIN LOGS PART1 ====="
+          echo "===== TRAIN LOGS ====="
           cat train_model.log || echo "No log found."
 
-      - name: Upload Model Part1
+      - name: Upload Model
         uses: actions/upload-artifact@v3
         with:
-          name: model_part1
-          path: model_part1.pkl
-
-  train_part2:
-    runs-on: ubuntu-latest
-    needs: [train_part1]
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Download CSV
-        uses: actions/download-artifact@v3
-        with:
-          name: training_data_csv
-          path: .
-
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Install Dependencies
-        run: |
-          pip install requests pandas scikit-learn joblib ta imbalanced-learn
-
-      - name: Ensure CSV
-        run: |
-          ls -l training_data.csv || echo "No CSV found"
-
-      - name: Train Model (Part 2)
-        run: |
-          python train_model.py --n_iter 35
-          mv model.pkl model_part2.pkl
-
-      - name: Show Logs
-        run: |
-          echo "===== TRAIN LOGS PART2 ====="
-          cat train_model.log || echo "No log found."
-
-      - name: Upload Model Part2
-        uses: actions/upload-artifact@v3
-        with:
-          name: model_part2
-          path: model_part2.pkl
-
-  train_part3:
-    runs-on: ubuntu-latest
-    needs: [train_part2]
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Download CSV
-        uses: actions/download-artifact@v3
-        with:
-          name: training_data_csv
-          path: .
-
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Install Dependencies
-        run: |
-          pip install requests pandas scikit-learn joblib ta imbalanced-learn
-
-      - name: Ensure CSV
-        run: |
-          ls -l training_data.csv || echo "No CSV found"
-
-      - name: Train Model (Part 3)
-        run: |
-          python train_model.py --n_iter 35
-          mv model.pkl model_part3.pkl
-
-      - name: Show Logs
-        run: |
-          echo "===== TRAIN LOGS PART3 ====="
-          cat train_model.log || echo "No log found."
-
-      - name: Upload Model Part3
-        uses: actions/upload-artifact@v3
-        with:
-          name: model_part3
-          path: model_part3.pkl 
+          name: model_final
+          path: model.pkl
