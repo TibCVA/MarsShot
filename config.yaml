@@ -66,7 +66,7 @@ tokens_daily:
 
 strategy:
   capital_initial: 821.0
-  buy_threshold: 0.8
+  buy_threshold: 0.7
   sell_threshold: 0.25
   stop_loss_pct: 0.30
   partial_take_profit_pct: 0.5
