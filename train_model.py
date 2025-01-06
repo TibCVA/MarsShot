@@ -155,7 +155,7 @@ def main():
         estimator=pipe,
         param_distributions=param_distributions,
         n_iter=n_iter,
-        scoring="recall",       # <= POINT CLEF => On vise le recall
+        scoring="f1",       # <= POINT CLEF => On vise le recall
         n_jobs=-1,
         cv=tscv,
         verbose=1,
