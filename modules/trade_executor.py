@@ -5,6 +5,7 @@ from binance.client import Client
 class TradeExecutor:
     def __init__(self, api_key, api_secret):
         self.client = Client(api_key, api_secret)
+        logging.info("[TradeExecutor] Initialized with given API/Secret")
 
     def get_symbol_price(self, asset):
         """
@@ -14,11 +15,18 @@ class TradeExecutor:
         if asset.upper()=="USDT":
             return 1.0
         pair = asset.upper() + "USDT"
-        tick = self.client.get_symbol_ticker(symbol=pair)
-        return float(tick["price"])
+        try:
+            tick = self.client.get_symbol_ticker(symbol=pair)
+            px = float(tick["price"])
+            logging.info(f"[TradeExecutor.get_symbol_price] {pair} => {px}")
+            return px
+        except Exception as e:
+            logging.error(f"[get_symbol_price ERROR] {asset} => {e}")
+            return 0.0
 
     def sell_all(self, asset, qty):
         if qty<=0:
+            logging.warning(f"[SELL_ALL] qty<=0 => skip {asset}")
             return 0.0
         real_qty= round(qty,5)
         pair= asset.upper()+"USDT"
@@ -37,13 +45,14 @@ class TradeExecutor:
                 fill_sum+= px*qf
                 fill_qty+= qf
             avg_px= fill_sum/fill_qty if fill_qty>0 else 0
-            logging.info(f"[SELL_ALL REAL] {pair} qty={real_qty}, fill_sum={fill_sum:.2f}, avg_px={avg_px:.4f}")
+            logging.info(f"[SELL_ALL REAL] {pair} qty={real_qty:.5f}, fill_sum={fill_sum:.2f}, avg_px={avg_px:.4f}")
             return fill_sum
         except Exception as e:
             logging.error(f"[SELL_ALL ERROR] {asset} => {e}")
             return 0.0
 
     def sell_partial(self, asset, qty):
+        logging.info(f"[SELL_PARTIAL] {asset}, qty={qty}")
         return self.sell_all(asset, qty)
 
     def buy(self, asset, usdt_amount):
@@ -54,6 +63,7 @@ class TradeExecutor:
             raw_qty= usdt_amount/ px
             real_qty= round(raw_qty,5)
             if real_qty<=0:
+                logging.warning(f"[BUY] real_qty<=0 => skip {asset}")
                 return (0.0,0.0)
             order= self.client.create_order(
                 symbol= pair,
