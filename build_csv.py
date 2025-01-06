@@ -34,7 +34,7 @@ logging.info("=== START build_csv ===")
 
 
 ########################################
-# LISTE (321 tokens)
+# LISTE DES 321 ALTCOINS
 ########################################
 
 TOKENS = [
@@ -360,11 +360,11 @@ TOKENS = [
 # FONCTIONS UTILES
 ########################################
 
-def fetch_lunar_data_one_year(symbol: str, year: int) -> Optional[pd.DataFrame]:
+def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
     """
-    Récupère l'historique daily pour UNE année (param 'year') depuis l'endpoint:
+    Récupère l'historique daily depuis l'endpoint:
       https://lunarcrush.com/api4/public/coins/<symbol>/time-series/v2
-    Paramètres: bucket=day, interval=1y, year=<year>.
+    Paramètres: bucket=day, interval=730d (pour couvrir ~2 ans).
 
     Champs qu'on conserve:
       date, open, close, high, low, volume, market_cap,
@@ -374,21 +374,20 @@ def fetch_lunar_data_one_year(symbol: str, year: int) -> Optional[pd.DataFrame]:
     params = {
         "key": LUNAR_API_KEY,
         "bucket": "day",
-        "interval": "1y",
-        "year": year
+        "interval": "730d"  # ~2 ans
     }
 
     try:
         r = requests.get(url, params=params, timeout=30)
-        logging.info(f"[LUNAR] {symbol} {year} => HTTP {r.status_code}")
+        logging.info(f"[LUNAR] {symbol} => HTTP {r.status_code}")
 
         if r.status_code != 200:
-            logging.warning(f"[WARN] {symbol} {year} => code={r.status_code}, skip.")
+            logging.warning(f"[WARN] {symbol} => code={r.status_code}, skip.")
             return None
 
         j = r.json()
         if "data" not in j or not j["data"]:
-            logging.warning(f"[WARN] {symbol} {year} => data vide => skip.")
+            logging.warning(f"[WARN] {symbol} => data vide => skip.")
             return None
 
         rows = []
@@ -422,35 +421,13 @@ def fetch_lunar_data_one_year(symbol: str, year: int) -> Optional[pd.DataFrame]:
         ])
         df.sort_values("date", inplace=True)
         df.reset_index(drop=True, inplace=True)
+
+        # => plus de filtrage par heure
         return df
 
     except Exception as e:
-        logging.error(f"[ERROR] {symbol} {year} => {e}")
+        logging.error(f"[ERROR] {symbol} => {e}")
         return None
-
-
-def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
-    """
-    Récupère l'historique daily sur 2 ans en concaténant 2 DataFrames:
-      - 1er appel: year = (année N)
-      - 2ème appel: year = (année N-1)
-    Ici, à titre d'exemple, on prend 2024 et 2023 pour illustrer.
-    """
-    dfs = []
-
-    # Exemple : on récupère 2 ans, 2024 et 2023
-    for year in [2024, 2023]:
-        df_year = fetch_lunar_data_one_year(symbol, year)
-        if df_year is not None and not df_year.empty:
-            dfs.append(df_year)
-
-    if not dfs:
-        return None
-
-    df_all = pd.concat(dfs, ignore_index=True)
-    df_all.sort_values("date", inplace=True)
-    df_all.reset_index(drop=True, inplace=True)
-    return df_all
 
 
 def compute_label(df: pd.DataFrame, days=2, threshold=0.05) -> pd.DataFrame:
@@ -486,7 +463,7 @@ def compute_daily_change(df: pd.DataFrame, col_name: str) -> pd.DataFrame:
 
 
 def main():
-    logging.info("=== build_csv => Start (no hour filter, daily changes for BTC/ETH/SOL) ===")
+    logging.info("=== build_csv => Start (no hour filter, daily changes for BTC/ETH) ===")
 
     # 1) Récup data BTC + daily change
     df_btc = fetch_lunar_data("BTC")
@@ -512,7 +489,7 @@ def main():
     else:
         df_sol = pd.DataFrame(columns=["date","sol_daily_change"])
 
-    # 4) Boucle sur altcoins (placeholder)
+    # 4) Boucle sur altcoins
     from indicators import compute_rsi_macd_atr
 
     all_dfs = []
