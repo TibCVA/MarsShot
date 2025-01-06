@@ -2,7 +2,8 @@
 # coding: utf-8
 
 """
-Script Telegram pour le système MarsShot.
+Script Telegram pour le système MarsShot, avec désactivation des signaux 
+dans run_polling(), afin d'éviter l'erreur "set_wakeup_fd only works in main thread".
 """
 
 import logging
@@ -18,7 +19,7 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes
 )
 
-# On importe les "vraies" fonctions de dashboard_data
+# On importe les fonctions "réelles" (portfolio, tokens, etc.)
 from dashboard_data import (
     get_portfolio_state,
     list_tokens_tracked,
@@ -45,7 +46,7 @@ if not BOT_TOKEN:
 logging.basicConfig(level=logging.INFO)
 
 #######################################
-# 1) Fonctions "Commandes Telegram"
+# 1) Commandes Telegram
 #######################################
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
@@ -54,9 +55,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/port => Etat global\n"
         "/perf => Performance de chaque position\n"
         "/tokens => Liste tokens suivis\n"
-        "/add <sym> => Ajouter\n"
-        "/remove <sym> => Retirer\n"
-        "/emergency => Vendre toutes positions\n"
+        "/add <sym> => Ajouter un token\n"
+        "/remove <sym> => Retirer un token\n"
+        "/emergency => Vendre toutes les positions\n"
     )
     await update.message.reply_text(msg)
 
@@ -68,7 +69,6 @@ async def cmd_port(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 async def cmd_perf(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # On peut afficher la perf "depuis get_performance_history()"
     pf = get_portfolio_state()
     perf = get_performance_history()
     msg = (
@@ -88,7 +88,6 @@ async def cmd_tokens(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ex. /add FET => on ajoute FET dans config
     if len(context.args) < 1:
         await update.message.reply_text("Usage: /add <symbol>")
         return
@@ -106,7 +105,6 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"{sym} déjà présent.")
 
 async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ex. /remove FET => on retire FET
     if len(context.args) < 1:
         await update.message.reply_text("Usage: /remove <symbol>")
         return
@@ -130,7 +128,7 @@ async def cmd_emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 #######################################
-# 2) Rapports auto
+# 2) Rapports auto (dans un thread séparé)
 #######################################
 def send_portfolio_report():
     pf = get_portfolio_state()
@@ -139,6 +137,7 @@ def send_portfolio_report():
         txt += "Positions =>\n"
         for p in pf["positions"]:
             txt += f"- {p['symbol']}: ~{p['value_usdt']} USDT\n"
+
     if BOT_TOKEN and CHAT_ID:
         send_telegram_message(BOT_TOKEN, CHAT_ID, txt)
 
@@ -146,46 +145,47 @@ def schedule_reports():
     while True:
         now = datetime.datetime.now()
         # envoi auto à 7h,12h,17h,22h
-        if now.minute == 0 and now.hour in [7,12,17,22]:
+        if now.minute == 0 and now.hour in [7, 12, 17, 22]:
             send_portfolio_report()
             time.sleep(60)
         time.sleep(30)
 
 #######################################
-# 3) Lancement du Bot Telegram en mode asyncio
+# 3) Lancement du Bot Telegram (sans signaux)
 #######################################
 def run_telegram_bot():
     """
-    Lance un thread pour schedule_reports,
-    et crée un event loop asyncio dédié pour le polling Telegram.
+    Lance le reporting auto dans un thread 
+    + exécute le bot Telegram dans CE thread avec un event loop asyncio
+      en désactivant la gestion de signaux => stop_signals=None
     """
-    # Thread de reporting auto (inchangé)
+    # 3.1) Lancement du reporting auto
     t = threading.Thread(target=schedule_reports, daemon=True)
     t.start()
 
-    # Coroutine principale pour le bot
+    # 3.2) Coroutine asynchrone qui lance app.run_polling(..., stop_signals=None)
     async def main_coroutine():
         app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-        app.add_handler(CommandHandler("start", cmd_start))
-        app.add_handler(CommandHandler("port", cmd_port))
-        app.add_handler(CommandHandler("perf", cmd_perf))
-        app.add_handler(CommandHandler("tokens", cmd_tokens))
-        app.add_handler(CommandHandler("add", cmd_add))
-        app.add_handler(CommandHandler("remove", cmd_remove))
-        app.add_handler(CommandHandler("emergency", cmd_emergency))
+        app.add_handler(CommandHandler("start",    cmd_start))
+        app.add_handler(CommandHandler("port",     cmd_port))
+        app.add_handler(CommandHandler("perf",     cmd_perf))
+        app.add_handler(CommandHandler("tokens",   cmd_tokens))
+        app.add_handler(CommandHandler("add",      cmd_add))
+        app.add_handler(CommandHandler("remove",   cmd_remove))
+        app.add_handler(CommandHandler("emergency",cmd_emergency))
 
-        logging.info("[TELEGRAM] Bot en polling (async).")
-        await app.run_polling()
+        logging.info("[TELEGRAM] Bot en polling (async, no signals).")
+        # on désactive l'installation des signaux => plus d'erreur set_wakeup_fd
+        await app.run_polling(stop_signals=None)
 
-    # Création d'un event loop dédié dans ce thread
+    # 3.3) Création d'un event loop dédié pour ce thread
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(main_coroutine())
     finally:
         loop.close()
-
 
 if __name__ == "__main__":
     run_telegram_bot()
