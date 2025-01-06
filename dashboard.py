@@ -4,8 +4,11 @@
 """
 Mini-dashboard Flask pour MarsShot.
 Affiche plusieurs onglets (Positions, Perf, Tokens, Trades, Emergency, Logs)
-en mode responsive (Bootstrap), et utilise VOS fonctions existantes
-pour un trading 100% live.
+en mode responsive (Bootstrap), et concatène TOUS vos logs :
+ - bot.log
+ - data_fetcher.log
+ - ml_decision.log
+dans l'onglet "Logs".
 """
 
 import os
@@ -23,12 +26,51 @@ try:
         emergency_out
     )
 except ImportError as e:
-    # Si jamais le module n'est pas trouvé ou que les fonctions n'existent pas,
-    # on arrête tout de suite, pas de fallback.
     raise ImportError(f"[ERREUR] Impossible d'importer telegram_integration: {e}")
 
 ########################
-# Model info + Logs
+# 1) Lecture + concaténation de TOUS les logs
+########################
+
+# Liste des logs à concaténer
+ALL_LOG_FILES = [
+    "bot.log",
+    "data_fetcher.log",
+    "ml_decision.log"
+    # vous pouvez en ajouter d'autres si besoin
+]
+
+def tail_all_logs(num_lines=200):
+    """
+    Lit chaque fichier de ALL_LOG_FILES (s'il existe),
+    prend les 200 dernières lignes (par défaut),
+    et les concatène en préfixant le nom du fichier
+    pour qu'on sache d'où vient la ligne.
+    """
+    combined_lines = []
+    for logf in ALL_LOG_FILES:
+        if os.path.exists(logf):
+            try:
+                with open(logf, "r") as f:
+                    lines = f.readlines()
+                # On prend les dernières `num_lines` lignes
+                lines = lines[-num_lines:]
+                # On ajoute un préfixe pour repérer le fichier
+                combined_lines.append(f"\n=== [ {logf} ] ===\n")
+                for line in lines:
+                    # Optionnel: on peut laisser la ligne telle quelle
+                    # ou faire: combined_lines.append(f"[{logf}] {line}")
+                    combined_lines.append(line)
+            except Exception as e:
+                combined_lines.append(f"\n[LOG ERROR] Impossible de lire {logf} => {e}\n")
+        else:
+            combined_lines.append(f"\n[{logf}] n'existe pas.\n")
+
+    # On fusionne le tout
+    return "".join(combined_lines)
+
+########################
+# 2) Model info
 ########################
 def get_model_version_date():
     fname = "model.pkl"
@@ -39,23 +81,13 @@ def get_model_version_date():
     else:
         return "model.pkl introuvable"
 
-LOG_FILE = "bot.log"
-def tail_logs(num_lines=200):
-    """Lit les `num_lines` dernières lignes de bot.log."""
-    if not os.path.exists(LOG_FILE):
-        return "Aucun fichier de log bot.log"
-    with open(LOG_FILE, "r") as f:
-        lines = f.readlines()
-    lines = lines[-num_lines:]
-    return "".join(lines)
-
 ########################
-# Flask app
+# 3) Flask app
 ########################
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)  # logs en console conteneur
 
-SECRET_PWD = "SECRET123"  # à personnaliser, ex: "/dashboard/SECRET123"
+SECRET_PWD = "SECRET123"  # à personnaliser
 
 TEMPLATE_HTML = r"""
 <!DOCTYPE html>
@@ -213,7 +245,7 @@ TEMPLATE_HTML = r"""
 
   <!-- Logs Tab -->
   <div class="tab-pane fade" id="logs" role="tabpanel" aria-labelledby="logs-tab">
-    <h2>Logs (bot.log)</h2>
+    <h2>Logs (Toutes sources)</h2>
     <div style="max-height:400px; overflow:auto; border:1px solid #ccc; padding:10px;" id="logsContainer">
       <pre id="logsContent"></pre>
     </div>
@@ -288,7 +320,7 @@ def emergency_api(pwd):
 def get_logs(pwd):
     if pwd != SECRET_PWD:
         return "Forbidden", 403
-    txt = tail_logs(num_lines=200)
+    txt = tail_all_logs(num_lines=200)
     return txt, 200, {"Content-Type":"text/plain; charset=utf-8"}
 
 def run_dashboard():
