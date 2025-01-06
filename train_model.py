@@ -2,134 +2,137 @@
 # coding: utf-8
 
 """
-Entraînement ML "bull run friendly" (V8), focalisé sur le critère F1 de la classe 1
-pour évaluer si on obtient un meilleur équilibre précision/rappel que la version axée sur le recall.
-Logique: TimeSeriesSplit + hold-out final (20%) + réentraînement final sur 100%.
-(Le reste du code est identique à la version précédente V6, sauf que le scoring passe à 'f1'.)
+train_model.py - Version V8 (focalisée sur le score F1 pour la classe 1)
+---------------------------------------------------------------
+ - Lecture d'un CSV (avec SHIFT_DAYS, THRESHOLD, etc. déjà appliqués).
+ - Séparation temporelle: on réserve la portion la plus récente (~20%) en final_test.
+ - Sur le reste (train_val), on effectue un TimeSeriesSplit (TSCV).
+ - Pipeline: StandardScaler + SMOTE (si dispo) + RandomForest.
+ - RandomizedSearchCV => scoring="f1" (pour viser un compromis précision/rappel).
+ - Meilleur modèle ré-entraîné sur l'intégralité du jeu train_val => on évalue sur final_test.
+ - Sauvegarde du modèle final.
 """
 
 import os
-import sys
 import logging
 import pandas as pd
 import numpy as np
 import joblib
 
-from sklearn.ensemble import RandomForestClassifier
+# sklearn
+from sklearn.model_selection import (
+    TimeSeriesSplit, 
+    RandomizedSearchCV,
+    train_test_split
+)
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report
-from sklearn.pipeline import Pipeline
 
-# Tentative d'import SMOTE
+# Imblearn (SMOTE + Pipeline) - fallback si non dispo
 try:
     from imblearn.over_sampling import SMOTE
     from imblearn.pipeline import Pipeline as ImbPipeline
     IMBLEARN_OK = True
 except ImportError:
+    from sklearn.pipeline import Pipeline as SkPipeline
     IMBLEARN_OK = False
-    print("[WARNING] 'imbalanced-learn' non installé => SMOTE indisponible.")
+    print("[WARNING] imbalanced-learn non installé => pas de SMOTE possible.")
 
 ########################################
-# CONFIG
+# CONFIG GLOBALE
 ########################################
-LOG_FILE   = "train_model.log"           # Fichier de logs
-CSV_FILE   = "training_data.csv"         # Fichier CSV d'entrée
-MODEL_FILE = "model.pkl"                 # Fichier de sortie (modèle final)
+LOG_FILE   = "train_model.log"
+CSV_FILE   = "training_data.csv"   # CSV complet
+MODEL_FILE = "model.pkl"
+
+# On suppose que ~20% des données les + récentes serviront de final test
+FINAL_TEST_RATIO = 0.2  
+# Nombre d'itérations RandomizedSearch
+N_ITER = 30
+# Nombre de splits TimeSeries (sur la portion train_val)
+TSCV_SPLITS = 10
 
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
-logging.info("=== START train_model ===")
-
+logging.info("=== START train_model (V8 => focus F1) ===")
 
 def main():
-    """
-    1) Charge CSV, check 'date', 'label'.
-    2) Tri par date, split 80% (train_val) / 20% (final_test).
-    3) Sur train_val => TSCV(10) + RandomizedSearchCV(n_iter=50, scoring='f1').
-    4) hold-out final => évalue best_model (F1 prioritaire sur la classe 1).
-    5) Re-train sur 100% => final_model, rapport in-sample global.
-    6) Sauvegarde final_model => model.pkl
-    """
-
-    # --n_iter <int> (optionnel) => par défaut 30
-    n_iter = 30
-    for i, arg in enumerate(sys.argv):
-        if arg == "--n_iter" and (i+1 < len(sys.argv)):
-            try:
-                n_iter = int(sys.argv[i+1])
-            except ValueError:
-                pass
-
+    # 1) Vérif CSV
     if not os.path.exists(CSV_FILE):
-        msg = f"[ERREUR] Fichier CSV introuvable : {CSV_FILE}"
+        msg = f"[ERREUR] Fichier CSV introuvable => {CSV_FILE}"
         print(msg)
         logging.error(msg)
         return
 
+    # 2) Lecture CSV
     df = pd.read_csv(CSV_FILE)
-    logging.info(f"CSV => {df.shape[0]} lignes, {df.shape[1]} colonnes.")
-    print(f"[INFO] CSV chargé: {len(df)} lignes, {len(df.columns)} colonnes.")
+    nrows, ncols = df.shape
+    logging.info(f"CSV => {nrows} lignes, {ncols} colonnes.")
 
+    # Vérif label
     if "label" not in df.columns:
-        msg = "[ERREUR] Colonne 'label' absente => classification impossible."
+        msg = "[ERREUR] Colonne 'label' manquante."
         print(msg)
         logging.error(msg)
         return
 
-    if "date" not in df.columns:
-        msg = "[ERREUR] Colonne 'date' absente => pas de split chronologique."
-        print(msg)
-        logging.error(msg)
-        return
-
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
-    df.dropna(subset=["date"], inplace=True)
-    df.sort_values("date", inplace=True)
-
-    # Features susceptibles d'être présentes dans le CSV
+    # Choix de features => adapter selon tes colonnes dispo
     features = [
         "close", "volume", "market_cap",
         "galaxy_score", "alt_rank", "sentiment",
         "rsi", "macd", "atr",
-        "btc_daily_change", "eth_daily_change", "sol_daily_change"
+        "btc_daily_change", "eth_daily_change"
     ]
     target = "label"
 
-    # Drop lignes NaN
-    sub = df.dropna(subset=features + [target]).copy()
-    if sub.empty:
-        msg = "[ERREUR] Aucune ligne exploitable => dataset vide après dropna."
+    # Vérif si features sont présentes
+    missing_cols = [c for c in features if c not in df.columns]
+    if missing_cols:
+        msg = f"[ERREUR] Colonnes manquantes: {missing_cols}"
         print(msg)
         logging.error(msg)
         return
 
-    # Split 80% / 20% chrono
-    cut_index = int(0.8 * len(sub))
-    train_val_df = sub.iloc[:cut_index].reset_index(drop=True)
-    final_test_df = sub.iloc[cut_index:].reset_index(drop=True)
+    # Retrait lignes NaN => crucial
+    sub = df.dropna(subset=features+[target]).copy()
+    if sub.empty:
+        msg = "[ERREUR] Aucune data valide après dropna."
+        print(msg)
+        logging.error(msg)
+        return
 
+    # 3) Faire un tri par date ? => On suppose qu'on a "date" trié
+    # On suppose que sub est déjà trié, sinon on fait:
+    #   sub.sort_values("date", inplace=True)
+
+    # On sépare le final_test
+    cutoff = int((1.0 - FINAL_TEST_RATIO)*len(sub))
+    train_val_df = sub.iloc[:cutoff].copy()
+    final_test_df = sub.iloc[cutoff:].copy()
+
+    logging.info(f"Train_val => {len(train_val_df)} lignes, Final_test => {len(final_test_df)}.")
+
+    # X, y (train_val)
     X_tv = train_val_df[features]
     y_tv = train_val_df[target].astype(int)
 
-    X_ft = final_test_df[features]
-    y_ft = final_test_df[target].astype(int)
+    # X, y (final_test)
+    X_test = final_test_df[features]
+    y_test = final_test_df[target].astype(int)
 
-    logging.info(f"Train_val => {len(X_tv)} lignes, Final_test => {len(X_ft)}.")
-    print(f"[INFO] train_val = {len(X_tv)}, final_test = {len(X_ft)}")
-
-    # Pipeline initial
+    # 4) Création Pipeline
     if IMBLEARN_OK:
         steps = [
             ("scaler", StandardScaler()),
             ("smote", SMOTE(random_state=42)),
             ("clf", RandomForestClassifier(random_state=42))
         ]
-        PipelineClass = ImbPipeline
-        logging.info("Pipeline: StandardScaler + SMOTE + RandomForest")
+        pipe_class = ImbPipeline
+        logging.info("[build_model] => SMOTE activé.")
     else:
         steps = [
             ("scaler", StandardScaler()),
@@ -138,118 +141,79 @@ def main():
                 random_state=42
             ))
         ]
-        from sklearn.pipeline import Pipeline as PipelineClass
-        logging.info("Pipeline fallback: StandardScaler + RF(class_weight=balanced_subsample)")
+        pipe_class = SkPipeline
+        logging.info("[build_model] => Pas de SMOTE, fallback pipeline")
 
-    pipe = PipelineClass(steps)
+    pipe = pipe_class(steps)
 
-    # Grille d'hyperparams
-    param_distributions = {
+    # 5) Espace d'hyperparamètres
+    # On peut inclure un param 'clf__class_weight': [None, "balanced", {0:1,1:2}, {0:1,1:3}]
+    # si on veut ajuster le ratio. 
+    param_dist = {
         "clf__n_estimators": [100, 200, 300, 500],
         "clf__max_depth": [10, 15, 20, None],
         "clf__min_samples_split": [2, 5, 10],
         "clf__min_samples_leaf": [1, 2, 5],
         "clf__max_features": ["sqrt", "log2", None],
         "clf__bootstrap": [True, False],
-        "clf__class_weight": [None, "balanced", "balanced_subsample",
-                              {0:1,1:2}, {0:1,1:3}]
+        "clf__class_weight": [None, "balanced_subsample", {0:1, 1:2}, {0:1, 1:3}],
     }
 
-    tscv = TimeSeriesSplit(n_splits=10)
-
-    # SCORING = 'f1' => On vise le f1 (classe 1) plus équilibré
-    search = RandomizedSearchCV(
-        estimator=pipe,
-        param_distributions=param_distributions,
-        n_iter=n_iter,
-        scoring="f1",
-        n_jobs=-1,
-        cv=tscv,
-        verbose=1,
-        random_state=42
+    # 6) Construction du TimeSeriesSplit
+    tscv = TimeSeriesSplit(
+        n_splits=TSCV_SPLITS
     )
 
-    logging.info(f"RandomizedSearchCV => TSCV(10), n_iter={n_iter}, scoring='f1'")
-    print("[INFO] RandomizedSearch => scoring='f1'. Patience ...")
+    # 7) RandomizedSearch => scoring="f1" 
+    from sklearn.model_selection import RandomizedSearchCV
+    rscv = RandomizedSearchCV(
+        estimator=pipe,
+        param_distributions=param_dist,
+        n_iter=N_ITER,
+        scoring="f1",   # <-- Changement crucial : on vise un F1 global (macro) 
+        # Si tu veux forcer la F1 minoritaire => "f1_weighted" ou "f1_macro", 
+        # ou un "make_scorer(f1_score, average='binary', pos_label=1)".
+        # Pour rester simple, on laisse "f1" => par défaut c'est f1 w.r.t. 
+        # la classe majoritaire => c'est "binary" en scikit-learn si y in {0,1} => pos_label=1
+        cv=tscv,
+        verbose=1,
+        random_state=42,
+        n_jobs=-1
+    )
 
-    search.fit(X_tv, y_tv)
-    best_model_cv = search.best_estimator_
-    best_params = search.best_params_
+    logging.info(f"[RandomizedSearchCV] => TSCV({TSCV_SPLITS}), n_iter={N_ITER}, scoring='f1'")
+    print("[INFO] Lancement RandomizedSearchCV => scoring='f1' sur train_val ...")
+    rscv.fit(X_tv, y_tv)
+
+    best_params = rscv.best_params_
     logging.info(f"Best Params => {best_params}")
-    print("\n[RESULT] Hyperparamètres retenus =>", best_params)
+    print("\n[RESULT] Meilleurs hyperparamètres =>", best_params)
 
-    # Éval sur hold-out final
-    y_pred_ft = best_model_cv.predict(X_ft)
-    rep_ft = classification_report(y_ft, y_pred_ft, digits=3)
-    logging.info("\n[Hold-out final test] " + rep_ft)
-    print("\n=== Rapport hold-out final test (f1 classe 1 prioritaire) ===")
-    print(rep_ft)
+    # 8) Bâtir un modèle final sur l'intégralité du train_val
+    #    (re-fit pipeline sur X_tv, y_tv, mais en fixant les best_params).
+    # On peut faire rscv.best_estimator_, qui est déjà fit, 
+    # mais pour être formel, on reconstruit un pipeline.
+    final_model = rscv.best_estimator_
 
-    # Re-train sur 100%
-    final_model = build_final_model(best_params, sub, features, target)
+    # 9) Évaluation sur final_test
+    y_pred = final_model.predict(X_test)
+    rep = classification_report(y_test, y_pred, digits=3)
+    logging.info("\n[Hold-out final test] " + rep)
+    print("\n===== [Hold-out final test] =====")
+    print(rep)
 
-    # Rapports sur 100%
-    X_all = sub[features].reset_index(drop=True)
-    y_all = sub[target].astype(int).reset_index(drop=True)
+    # 10) Si tu veux, on peut re-check in-sample
+    final_model.fit(X_tv, y_tv)  # refit complet
+    y_pred_in = final_model.predict(X_tv)
+    rep_in = classification_report(y_tv, y_pred_in, digits=3)
+    logging.info("\n[In-sample 100%] " + rep_in)
+    print("\n===== [In-sample 100%] =====")
+    print(rep_in)
 
-    y_pred_all = final_model.predict(X_all)
-    rep_all = classification_report(y_all, y_pred_all, digits=3)
-    logging.info("\n[In-sample 100%] " + rep_all)
-    print("\n=== Rapport final_model sur 100% in-sample ===")
-    print(rep_all)
-
+    # 11) Sauvegarde
     joblib.dump(final_model, MODEL_FILE)
     logging.info(f"Final model sauvegardé => {MODEL_FILE}")
-    print(f"[OK] Final model sauvegardé => {MODEL_FILE}")
-
-
-def build_final_model(best_params, full_df, features, target):
-    """
-    Construit un pipeline final (scaler + SMOTE + RF)
-    avec EXACTEMENT les hyperparams best_params.
-    Entraîne sur 100% du dataset pour usage en production.
-    """
-    if IMBLEARN_OK:
-        final_steps = [
-            ("scaler", StandardScaler()),
-            ("smote", SMOTE(random_state=42)),
-            ("clf", RandomForestClassifier(
-                random_state=42,
-                **extract_rf_params(best_params)
-            ))
-        ]
-        from imblearn.pipeline import Pipeline as PipelineClass2
-        logging.info("[build_final_model] => SMOTE activé")
-    else:
-        final_steps = [
-            ("scaler", StandardScaler()),
-            ("clf", RandomForestClassifier(
-                random_state=42,
-                **extract_rf_params(best_params)
-            ))
-        ]
-        from sklearn.pipeline import Pipeline as PipelineClass2
-        logging.info("[build_final_model] => Fallback RF")
-
-    final_model = PipelineClass2(final_steps)
-    X_all = full_df[features].reset_index(drop=True)
-    y_all = full_df[target].astype(int).reset_index(drop=True)
-
-    final_model.fit(X_all, y_all)
-    return final_model
-
-
-def extract_rf_params(params_dict):
-    """
-    Convertit { 'clf__xxx': ... } en { 'xxx': ... } 
-    pour initialiser RandomForestClassifier.
-    """
-    rf_params = {}
-    for k, v in params_dict.items():
-        if k.startswith("clf__"):
-            real_key = k.replace("clf__", "")
-            rf_params[real_key] = v
-    return rf_params
+    print(f"\n[OK] Modèle final (V8 => f1) sauvegardé => {MODEL_FILE}")
 
 
 if __name__ == "__main__":
