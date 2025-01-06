@@ -26,7 +26,7 @@ except ImportError:
 def main():
     """
     Boucle principale du bot de trading en mode LIVE.
-    - Chaque jour à 00h00 heure de Paris => daily_update_live(...) => SELL/BUY
+    - Chaque jour à 01h00 heure de Paris => daily_update_live(...) => SELL/BUY
     - Intraday => intraday_check_real(...) => trailing/stop-loss live
     - Stockage local (positions_meta) dans bot_state.json
     """
@@ -39,7 +39,7 @@ def main():
         config = yaml.safe_load(f)
 
     logging.basicConfig(
-        filename=config["logging"]["file"],  # "bot.log"
+        filename=config["logging"]["file"],  # "bot.log" par ex.
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s"
     )
@@ -69,24 +69,22 @@ def main():
             hour_p = now_paris.hour
             min_p  = now_paris.minute
 
-            # => Tâche daily à 00h00 PARIS
-            # (si minute==0 et did_daily_update_today==False)
+            # => Tâche daily à 01h00 PARIS
             if (
-                hour_p == 0
+                hour_p == 1
                 and min_p == 0
                 and not state.get("did_daily_update_today", False)
             ):
-                logging.info("[MAIN] It's 00h00 in Paris => launching daily_update_live.")
+                logging.info("[MAIN] It's 01h00 in Paris => launching daily_update_live.")
                 daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today flag => True.")
 
-            # Reset du flag si on n'est plus à l'heure
-            # => si hour != 0 => on repasse did_daily_update_today => False
-            if hour_p != 0:
+            # Reset du flag si on n'est plus à 01h
+            if hour_p != 1:
                 if state.get("did_daily_update_today", False):
-                    logging.info("[MAIN] hour!=0 => reset did_daily_update_today=False.")
+                    logging.info("[MAIN] hour!=1 => reset did_daily_update_today=False.")
                 state["did_daily_update_today"] = False
                 save_state(state)
 
@@ -152,8 +150,8 @@ def daily_update_live(state, config, bexec):
             entry_px = meta.get("entry_px", None)
 
             current_px = bexec.get_symbol_price(asset)
-            if entry_px:
-                ratio = current_px / entry_px if entry_px>0 else 1.0
+            if entry_px and entry_px > 0:
+                ratio = current_px / entry_px
                 if ratio >= strat["big_gain_exception_pct"] and not did_skip:
                     meta["did_skip_sell_once"] = True
                     state["positions_meta"][asset] = meta
