@@ -2,10 +2,9 @@
 # coding: utf-8
 
 """
-Mini-dashboard Flask pour MarsShot, intégré à ton système.
+Mini-dashboard Flask pour MarsShot.
 Affiche plusieurs onglets (Positions, Perf, Tokens, Trades, Emergency, Logs)
-en mode responsive (Bootstrap), et utilise tes fonctions existantes
-pour obtenir les données réelles (sans modifier tes autres fichiers).
+en mode responsive (Bootstrap), et utilise VOS fonctions existantes.
 """
 
 import os
@@ -13,52 +12,20 @@ import datetime
 import logging
 from flask import Flask, request, jsonify, render_template_string
 
-# On suppose que tes modules sont installés comme suit :
-# - telegram_integration.py => contient get_portfolio_state, list_tokens_tracked,
-#   get_performance_history, get_trades_history, emergency_out
-# - bot.log => fichier log
+# === IMPORTANT ===
+# On importe depuis modules/telegram_integration :
 try:
-    from telegram_integration import (
+    from modules.telegram_integration import (
         get_portfolio_state,
         list_tokens_tracked,
         get_performance_history,
         get_trades_history,
         emergency_out
     )
-except ImportError:
-    # Si besoin, on met un fallback / exemple minimal
-    # A TOI d'ajuster selon la conversation
-    def get_portfolio_state():
-        return {
-          "positions": [
-            {"symbol":"FET","qty":120.0,"value_usdt":100.0},
-            {"symbol":"AGIX","qty":50.0,"value_usdt":150.0}
-          ],
-          "total_value_usdt":250.0
-        }
-    def list_tokens_tracked():
-        return ["FET","AGIX","ARB","OP","INJ","RNDR","MANA","SAND"]
-    def get_performance_history():
-        return {
-          "1d":  {"usdt":  45.0, "pct":  6.2},
-          "7d":  {"usdt":  78.0, "pct": 10.1},
-          "1m":  {"usdt": 150.0, "pct": 22.5},
-          "3m":  {"usdt": 280.0, "pct": 39.9},
-          "1y":  {"usdt": 600.0, "pct": 75.0},
-          "all": {"usdt": 750.0, "pct": 93.8}
-        }
-    def get_trades_history():
-        return [
-          {"symbol":"FET","buy_prob":0.85,"sell_prob":0.25,"days_held":12,
-           "pnl_usdt":30.0,"pnl_pct":60.0,"status":"gagnant"},
-          {"symbol":"AGIX","buy_prob":0.82,"sell_prob":0.28,"days_held":5,
-           "pnl_usdt":-15.0,"pnl_pct":-30.0,"status":"perdant"}
-        ]
-    def emergency_out():
-        logging.info("[EMERGENCY] Tout vendu en USDT.")
-        print("[EMERGENCY] Out (exemple)")
+except ImportError as e:
+    # Si l'import échoue, on le signale => plus de fallback
+    raise ImportError(f"[ERREUR] Impossible d'importer telegram_integration: {e}")
 
-# Pour la date du model.pkl
 def get_model_version_date():
     fname = "model.pkl"
     if os.path.exists(fname):
@@ -68,13 +35,8 @@ def get_model_version_date():
     else:
         return "model.pkl introuvable"
 
-# Lecture du log
 LOG_FILE = "bot.log"
 def tail_logs(num_lines=200):
-    """
-    Lit les `num_lines` dernières lignes de bot.log
-    Retourne un str formaté (avec \n).
-    """
     if not os.path.exists(LOG_FILE):
         return "Aucun fichier de log bot.log"
     with open(LOG_FILE, "r") as f:
@@ -82,14 +44,13 @@ def tail_logs(num_lines=200):
     lines = lines[-num_lines:]
     return "".join(lines)
 
-
 ###########################################
 # Flask APP
 ###########################################
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
-SECRET_PWD = "SECRET123"  # A adapter si besoin
+SECRET_PWD = "SECRET123"
 
 TEMPLATE_HTML = r"""
 <!DOCTYPE html>
@@ -288,26 +249,11 @@ setInterval(refreshLogs, 3000);
 </html>
 """
 
-app = Flask(__name__)
-
-###########################################
-# Configuration
-###########################################
-SECRET_PWD = "SECRET123"  # URL => /dashboard/SECRET123
-
-###########################################
-# ROUTES
-###########################################
 @app.route(f"/dashboard/<pwd>", methods=["GET"])
 def dashboard(pwd):
-    """
-    URL: /dashboard/SECRET123
-    Affiche page avec onglets: Positions, Perf, Tokens, Hist Trades, Emergency, Logs
-    """
     if pwd != SECRET_PWD:
         return "Forbidden", 403
 
-    # Récup data
     pf = get_portfolio_state()
     tokens = list_tokens_tracked()
     perf = get_performance_history()
@@ -326,9 +272,6 @@ def dashboard(pwd):
 
 @app.route(f"/emergency/<pwd>", methods=["POST"])
 def emergency_api(pwd):
-    """
-    Appel AJAX => vend tout
-    """
     if pwd != SECRET_PWD:
         return jsonify({"message":"Forbidden"}), 403
     emergency_out()
@@ -336,17 +279,12 @@ def emergency_api(pwd):
 
 @app.route(f"/logs/<pwd>", methods=["GET"])
 def get_logs(pwd):
-    """
-    Affiche ~200 dernières lignes du log
-    """
     if pwd != SECRET_PWD:
         return "Forbidden", 403
     txt = tail_logs(num_lines=200)
     return txt, 200, {"Content-Type":"text/plain; charset=utf-8"}
 
-
 def run_dashboard():
-    # Lance le serveur Flask
     app.run(host="0.0.0.0", port=5000, debug=False)
 
 if __name__=="__main__":
