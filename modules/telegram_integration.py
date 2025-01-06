@@ -11,6 +11,7 @@ import datetime
 import threading
 import os
 import yaml
+import asyncio
 
 from telegram import Update
 from telegram.ext import (
@@ -88,18 +89,17 @@ async def cmd_tokens(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ex. /add FET => on ajoute FET dans config
-    if len(context.args)<1:
+    if len(context.args) < 1:
         await update.message.reply_text("Usage: /add <symbol>")
         return
     sym = context.args[0].upper()
 
-    # On lit config => on append => on rewrite
     with open(CONFIG_FILE, "r") as f:
         conf = yaml.safe_load(f)
 
     if sym not in conf["tokens_daily"]:
         conf["tokens_daily"].append(sym)
-        with open(CONFIG_FILE,"w") as fw:
+        with open(CONFIG_FILE, "w") as fw:
             yaml.dump(conf, fw)
         await update.message.reply_text(f"{sym} ajouté à la liste.")
     else:
@@ -107,17 +107,17 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ex. /remove FET => on retire FET
-    if len(context.args)<1:
+    if len(context.args) < 1:
         await update.message.reply_text("Usage: /remove <symbol>")
         return
     sym = context.args[0].upper()
 
-    with open(CONFIG_FILE,"r") as f:
+    with open(CONFIG_FILE, "r") as f:
         conf = yaml.safe_load(f)
 
     if sym in conf["tokens_daily"]:
         conf["tokens_daily"].remove(sym)
-        with open(CONFIG_FILE,"w") as fw:
+        with open(CONFIG_FILE, "w") as fw:
             yaml.dump(conf, fw)
         await update.message.reply_text(f"{sym} retiré de la liste.")
     else:
@@ -152,25 +152,40 @@ def schedule_reports():
         time.sleep(30)
 
 #######################################
-# 3) Lancement du Bot Telegram
+# 3) Lancement du Bot Telegram en mode asyncio
 #######################################
 def run_telegram_bot():
-    # Thread de reporting auto
+    """
+    Lance un thread pour schedule_reports,
+    et crée un event loop asyncio dédié pour le polling Telegram.
+    """
+    # Thread de reporting auto (inchangé)
     t = threading.Thread(target=schedule_reports, daemon=True)
     t.start()
 
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("port", cmd_port))
-    app.add_handler(CommandHandler("perf", cmd_perf))
-    app.add_handler(CommandHandler("tokens", cmd_tokens))
-    app.add_handler(CommandHandler("add", cmd_add))
-    app.add_handler(CommandHandler("remove", cmd_remove))
-    app.add_handler(CommandHandler("emergency", cmd_emergency))
+    # Coroutine principale pour le bot
+    async def main_coroutine():
+        app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    logging.info("[TELEGRAM] Bot en polling.")
-    app.run_polling()
+        app.add_handler(CommandHandler("start", cmd_start))
+        app.add_handler(CommandHandler("port", cmd_port))
+        app.add_handler(CommandHandler("perf", cmd_perf))
+        app.add_handler(CommandHandler("tokens", cmd_tokens))
+        app.add_handler(CommandHandler("add", cmd_add))
+        app.add_handler(CommandHandler("remove", cmd_remove))
+        app.add_handler(CommandHandler("emergency", cmd_emergency))
+
+        logging.info("[TELEGRAM] Bot en polling (async).")
+        await app.run_polling()
+
+    # Création d'un event loop dédié dans ce thread
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(main_coroutine())
+    finally:
+        loop.close()
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     run_telegram_bot()
