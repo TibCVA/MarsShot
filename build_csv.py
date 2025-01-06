@@ -364,7 +364,7 @@ def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
     """
     Récupère l'historique daily depuis l'endpoint:
       https://lunarcrush.com/api4/public/coins/<symbol>/time-series/v2
-    Paramètres: bucket=day, interval=730d (pour couvrir ~2 ans).
+    Paramètres: bucket=day, interval=1y.
 
     Champs qu'on conserve:
       date, open, close, high, low, volume, market_cap,
@@ -374,7 +374,7 @@ def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
     params = {
         "key": LUNAR_API_KEY,
         "bucket": "day",
-        "interval": "730d"  # ~2 ans
+        "interval": "1y"
     }
 
     try:
@@ -481,7 +481,7 @@ def main():
     else:
         df_eth = pd.DataFrame(columns=["date","eth_daily_change"])
         
-    # 3) Récup data SOL + daily change
+    # 2) Récup data SOL + daily change
     df_sol = fetch_lunar_data("SOL")
     if df_sol is not None and not df_sol.empty:
         df_sol = compute_daily_change(df_sol, "sol_daily_change")
@@ -489,7 +489,7 @@ def main():
     else:
         df_sol = pd.DataFrame(columns=["date","sol_daily_change"])
 
-    # 4) Boucle sur altcoins
+    # 3) Boucle sur altcoins
     from indicators import compute_rsi_macd_atr
 
     all_dfs = []
@@ -544,7 +544,7 @@ def main():
         print(f"[WARN] No data => minimal CSV => {OUTPUT_CSV}")
         return
 
-    # 5) Concat final
+    # 4) Concat final
     df_final = pd.concat(all_dfs, ignore_index=True)
     df_final.sort_values(["symbol","date"], inplace=True)
     df_final.reset_index(drop=True, inplace=True)
@@ -554,7 +554,7 @@ def main():
         if col in df_final.columns:
             df_final.drop(columns=[col], inplace=True)
 
-    # 6) Export CSV
+    # 5) Export CSV
     df_final.to_csv(OUTPUT_CSV, index=False)
     logging.info(f"Export => {OUTPUT_CSV} => {len(df_final)} rows")
     print(f"Export => {OUTPUT_CSV} ({len(df_final)} rows)")
