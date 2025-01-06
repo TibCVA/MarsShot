@@ -205,34 +205,60 @@ Bon trading et bonne continuation !
 
 Process pour mettre à jour droplet :
 
-# 1) SSH
+1) Se connecter en SSH et nettoyer (vous l’avez déjà fait)
+Vous avez mentionné :
+bash
+Copier le code
 ssh root@10.114.0.3
+Password: GOd823100!a
 
-Password : GOd823100!a
-
-
-# 2) Nettoyer
 docker stop marsshot_container
 docker rm marsshot_container
 docker rmi marsshot
 rm -rf /root/MarsShot
 
-# 3) Recloner
+Après ces commandes, le dossier /root/MarsShot n’existe plus et vous n’avez plus d’image marsshot. C’est le point de départ (« tout est supprimé »).
+________________________________________
+2) Re-créer le dossier /root/MarsShot ou re-cloner
+Option A (recommandée) : Re-cloner d’abord, puis uploader le model.pkl
+1.	Toujours dans votre session SSH :
+
 cd /root
 git clone https://github.com/TibCVA/MarsShot.git
 cd MarsShot
 
-# 4) Docker build
+o	Maintenant, /root/MarsShot existe à nouveau, avec le code cloné.
+________________________________________
+3) Uploader le fichier model.pkl avec WinSCP
+1.	Lancez WinSCP sur votre PC.
+2.	Host name : utilisez votre IP publique ( 165.232.69.118)
+3.	User : root, Password : GOd823100!a.
+4.	File protocol : SFTP ou SCP, Port : 22.
+5.	Connectez-vous : vous voyez l’arborescence du serveur.
+6.	Naviguez jusqu’à /root/MarsShot/ sur le panneau de droite.
+7.	Sur votre panneau de gauche (votre PC), trouvez model.pkl (ex. C:\Users\cval-tlacour\Desktop\MarsShot\1. modèles pkl\V8\model.pkl).
+8.	Glissez-déposez model.pkl vers /root/MarsShot/.
+o	WinSCP va transférer le fichier sur la Droplet.
+9.	Vérifiez (dans WinSCP) que model.pkl apparaît bien dans /root/MarsShot.
+(Si vous êtes toujours en SSH, vous pouvez faire un ls -lh /root/MarsShot/model.pkl pour confirmer.)
+________________________________________
+4) Reconstruire l’image Docker
+À nouveau en SSH (si vous aviez fermé la session, reconnectez-vous) :
+
+cd /root/MarsShot
 docker build --no-cache -t marsshot .
 
-# 5) Lancer
+•	Vous devriez voir que Docker copie tous les fichiers (COPY . .) dont model.pkl.
+•	À la fin, un message Successfully tagged marsshot:latest.
+________________________________________
+5) Lancer le conteneur
+
 docker run -d --name marsshot_container -p 5000:5000 marsshot
-# => main.py + dashboard.py + start.sh => conteneur up
 
-#6) Vérifier
-docker ps
+________________________________________
+6) Vérifier
+•	docker ps : voir si marsshot_container tourne.
+•	docker logs -f marsshot_container : suivre les logs.
 
-
-Dashboard :
 http://165.232.69.118:5000/dashboard/SECRET123
 
