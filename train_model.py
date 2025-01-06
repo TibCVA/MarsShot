@@ -2,8 +2,10 @@
 # coding: utf-8
 
 """
-Entraînement ML "bull run friendly", maximisant le rappel (recall) de la classe 1.
+Entraînement ML "bull run friendly" (V8), focalisé sur le critère F1 de la classe 1
+pour évaluer si on obtient un meilleur équilibre précision/rappel que la version axée sur le recall.
 Logique: TimeSeriesSplit + hold-out final (20%) + réentraînement final sur 100%.
+(Le reste du code est identique à la version précédente V6, sauf que le scoring passe à 'f1'.)
 """
 
 import os
@@ -42,16 +44,18 @@ logging.basicConfig(
 )
 logging.info("=== START train_model ===")
 
+
 def main():
     """
     1) Charge CSV, check 'date', 'label'.
     2) Tri par date, split 80% (train_val) / 20% (final_test).
-    3) Sur train_val => TSCV(10) + RandomizedSearchCV(n_iter=50, scoring='recall').
-    4) hold-out final => évalue best_model (rappel classe 1 prioritaire).
+    3) Sur train_val => TSCV(10) + RandomizedSearchCV(n_iter=50, scoring='f1').
+    4) hold-out final => évalue best_model (F1 prioritaire sur la classe 1).
     5) Re-train sur 100% => final_model, rapport in-sample global.
     6) Sauvegarde final_model => model.pkl
     """
-    # --n_iter <int> (sinon 30)
+
+    # --n_iter <int> (optionnel) => par défaut 30
     n_iter = 30
     for i, arg in enumerate(sys.argv):
         if arg == "--n_iter" and (i+1 < len(sys.argv)):
@@ -86,6 +90,7 @@ def main():
     df.dropna(subset=["date"], inplace=True)
     df.sort_values("date", inplace=True)
 
+    # Features susceptibles d'être présentes dans le CSV
     features = [
         "close", "volume", "market_cap",
         "galaxy_score", "alt_rank", "sentiment",
@@ -94,14 +99,15 @@ def main():
     ]
     target = "label"
 
+    # Drop lignes NaN
     sub = df.dropna(subset=features + [target]).copy()
     if sub.empty:
-        msg = "[ERREUR] Aucune ligne exploitable après dropna => dataset vide."
+        msg = "[ERREUR] Aucune ligne exploitable => dataset vide après dropna."
         print(msg)
         logging.error(msg)
         return
 
-    # Split 80% / 20% chronologique
+    # Split 80% / 20% chrono
     cut_index = int(0.8 * len(sub))
     train_val_df = sub.iloc[:cut_index].reset_index(drop=True)
     final_test_df = sub.iloc[cut_index:].reset_index(drop=True)
@@ -137,7 +143,7 @@ def main():
 
     pipe = PipelineClass(steps)
 
-    # Ajout clf__class_weight dans la grille => (None, balanced, {0:1,1:2}, etc.)
+    # Grille d'hyperparams
     param_distributions = {
         "clf__n_estimators": [100, 200, 300, 500],
         "clf__max_depth": [10, 15, 20, None],
@@ -145,25 +151,26 @@ def main():
         "clf__min_samples_leaf": [1, 2, 5],
         "clf__max_features": ["sqrt", "log2", None],
         "clf__bootstrap": [True, False],
-        "clf__class_weight": [None, "balanced", "balanced_subsample", {0:1,1:2}, {0:1,1:3}]
+        "clf__class_weight": [None, "balanced", "balanced_subsample",
+                              {0:1,1:2}, {0:1,1:3}]
     }
 
     tscv = TimeSeriesSplit(n_splits=10)
 
-    # SCORING = 'recall' => On favorise la détection de la classe 1
+    # SCORING = 'f1' => On vise le f1 (classe 1) plus équilibré
     search = RandomizedSearchCV(
         estimator=pipe,
         param_distributions=param_distributions,
         n_iter=n_iter,
-        scoring="f1",       # <= POINT CLEF => On vise le recall
+        scoring="f1",
         n_jobs=-1,
         cv=tscv,
         verbose=1,
         random_state=42
     )
 
-    logging.info(f"RandomizedSearchCV => TSCV(10), n_iter={n_iter}, scoring='recall'")
-    print("[INFO] RandomizedSearch => scoring='recall' (classe 1). Patience ...")
+    logging.info(f"RandomizedSearchCV => TSCV(10), n_iter={n_iter}, scoring='f1'")
+    print("[INFO] RandomizedSearch => scoring='f1'. Patience ...")
 
     search.fit(X_tv, y_tv)
     best_model_cv = search.best_estimator_
@@ -171,14 +178,14 @@ def main():
     logging.info(f"Best Params => {best_params}")
     print("\n[RESULT] Hyperparamètres retenus =>", best_params)
 
-    # Éval sur hold-out
+    # Éval sur hold-out final
     y_pred_ft = best_model_cv.predict(X_ft)
     rep_ft = classification_report(y_ft, y_pred_ft, digits=3)
     logging.info("\n[Hold-out final test] " + rep_ft)
-    print("\n=== Rapport hold-out final test (rappel classe 1 prioritaire) ===")
+    print("\n=== Rapport hold-out final test (f1 classe 1 prioritaire) ===")
     print(rep_ft)
 
-    # Re-train sur 100% => final_model
+    # Re-train sur 100%
     final_model = build_final_model(best_params, sub, features, target)
 
     # Rapports sur 100%
@@ -191,7 +198,6 @@ def main():
     print("\n=== Rapport final_model sur 100% in-sample ===")
     print(rep_all)
 
-    # Sauvegarde
     joblib.dump(final_model, MODEL_FILE)
     logging.info(f"Final model sauvegardé => {MODEL_FILE}")
     print(f"[OK] Final model sauvegardé => {MODEL_FILE}")
