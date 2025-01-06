@@ -193,7 +193,7 @@ Avec ce README, tu :
 	1.	Installes Docker + requirements,
 	2.	Build et run ton conteneur (ou localement),
 	3.	Utilises le Telegram Bot (commandes /port, /perf, etc.),
-	4.	Accèdes au Dashboard : http://<IP>:5000/dashboard/SECRET123.
+	4.	Accèdes au Dashboard : http://165.232.69.118:5000/dashboard/SECRET123
 	5.	Entraînes un nouveau modèle en appelant train_model.py, recharges model.pkl, le bot se met à jour.
 
 Tu disposes ainsi d’un système complet :
