@@ -4,33 +4,8 @@
 """
 ml_decision.py
 --------------
-But : lire le CSV daily_inference_data.csv (issu de data_fetcher.py),
-      charger model.pkl (issu de build_csv.py + train_model.py),
-      calculer la proba de hausse (classe=1) pour chaque token,
-      et afficher + logger le résultat.
-
-Configuration :
- - On suppose que daily_inference_data.csv contient 1 ligne par token,
-   avec les colonnes EXACTEMENT comme build_csv.py :
-     ["date","open","high","low","close","volume","market_cap",
-      "galaxy_score","alt_rank","sentiment",
-      "rsi","macd","atr",
-      "label","symbol",
-      "btc_daily_change","eth_daily_change","sol_daily_change"]
-
- - On utilise model.pkl (RandomForest ou autre) 
-   qui attend en entrée (train_model.py) => un vecteur :
-     [close, volume, market_cap, galaxy_score, alt_rank, sentiment,
-      rsi, macd, atr, btc_daily_change, eth_daily_change, sol_daily_change]
-
-Exécution "live" :
-1) data_fetcher.py => produit daily_inference_data.csv
-2) python ml_decision.py => lit ce CSV, charge model.pkl => proba => logs.
-
-+ en plus : get_probability_for_symbol(...) => fetch "live" LunarCrush
-
-Pas de redondance côté batch, 
-mais on rétablit la fonction live pour main.py.
+But : lire daily_inference_data.csv, charger model.pkl, calculer proba.
++ get_probability_for_symbol(...) => usage live dans main.py.
 """
 
 import os
@@ -39,25 +14,16 @@ import numpy as np
 import pandas as pd
 import joblib
 
-########################################
-# FICHIERS
-########################################
 MODEL_FILE = "model.pkl"
 INPUT_CSV  = "daily_inference_data.csv"
 LOG_FILE   = "ml_decision.log"
 
-########################################
-# COLONNES attendues
-########################################
 COLUMNS_ORDER = [
     "close","volume","market_cap","galaxy_score","alt_rank","sentiment",
     "rsi","macd","atr",
     "btc_daily_change","eth_daily_change","sol_daily_change"
 ]
 
-########################################
-# LOGGING
-########################################
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
@@ -66,25 +32,25 @@ logging.basicConfig(
 logging.info("=== START ml_decision ===")
 
 def main():
-    # 1) Vérifier la présence du modèle
+    # 1) Check model
     if not os.path.exists(MODEL_FILE):
         msg = f"[ERROR] {MODEL_FILE} introuvable => impossible de prédire."
         logging.error(msg)
         print(msg)
         return
 
-    # 2) Vérifier le CSV
+    # 2) Check CSV
     if not os.path.exists(INPUT_CSV):
         msg = f"[ERROR] {INPUT_CSV} introuvable => impossible de prédire."
         logging.error(msg)
         print(msg)
         return
 
-    # 3) Charger le modèle
+    # 3) Load model
     model = joblib.load(MODEL_FILE)
-    logging.info(f"[INFO] Modèle {MODEL_FILE} chargé.")
+    logging.info(f"[INFO] Model {MODEL_FILE} chargé.")
 
-    # 4) Lire le CSV
+    # 4) Read CSV
     df = pd.read_csv(INPUT_CSV)
     if df.empty:
         msg = "[WARN] daily_inference_data.csv est vide => aucune prédiction."
@@ -92,47 +58,47 @@ def main():
         print(msg)
         return
 
-    # 5) Vérifier qu'on a bien toutes les colonnes
+    # 5) Check columns
     needed_cols = COLUMNS_ORDER + ["symbol"]
     for col in needed_cols:
         if col not in df.columns:
-            msg = f"[ERROR] Colonne manquante dans {INPUT_CSV} => {col}"
+            msg = f"[ERROR] Colonne manquante => {col}"
             logging.error(msg)
             print(msg)
             return
 
-    # 6) Drop les lignes qui ont un NaN dans l'une des colonnes d'entrée
+    # 6) Drop NaN
     df_before = len(df)
     df.dropna(subset=COLUMNS_ORDER, inplace=True)
     df_after = len(df)
-    if df_after < df_before:
-        logging.warning(f"[WARN] On drop {df_before - df_after} tokens pour cause de NaN dans colonnes d'entrée.")
+    if df_after<df_before:
+        logging.warning(f"[WARN] Drop {df_before-df_after} tokens => NaN.")
 
     if df.empty:
-        msg = "[WARN] Toutes les lignes ont été drop => plus rien à prédire."
+        msg = "[WARN] All lines dropped => no predict."
         logging.warning(msg)
         print(msg)
         return
 
-    # 7) Construire la matrice d'entrée (N,12)
+    # 7) Build X => (N,12)
     X = df[COLUMNS_ORDER].values.astype(float)
-    # 8) Prédiction
-    probs = model.predict_proba(X)  # shape (N,2)
-    # index 1 = prob classe=1
+    # 8) predict_proba
+    probs = model.predict_proba(X)
     prob_1 = probs[:,1]
 
-    # 9) On logge le résultat + on print
+    # 9) log results
     print("=== Probabilités de hausse (classe=1) ===")
     for i, row in df.iterrows():
         sym = row["symbol"]
-        p   = prob_1[i]
+        p = prob_1[i]
         print(f"{sym} => {p:.4f}")
         logging.info(f"[RESULT] {sym} => {p:.4f}")
 
     logging.info("=== END ml_decision ===")
 
+
 ##########################################################
-# AJOUT MINIMAL => get_probability_for_symbol(...) "live"
+# Restauration get_probability_for_symbol(...) usage live
 ##########################################################
 
 import requests
@@ -142,7 +108,7 @@ from datetime import datetime
 from typing import Optional
 from indicators import compute_rsi_macd_atr
 
-# Si besoin, on lit la config + clé LunarCrush
+# Config + key LunarCrush
 import yaml
 if not os.path.exists("config.yaml"):
     raise FileNotFoundError("[ERREUR] config.yaml introuvable.")
@@ -154,25 +120,21 @@ LUNAR_API_KEY = CFG_LC["lunarcrush"]["api_key"]
 
 def get_probability_for_symbol(symbol: str) -> Optional[float]:
     """
-    Restauration de la fonction live pour 'main.py'
-    => Récupère 1 an data sur symbol (LunarCrush),
-       calcule RSI/macd/atr, merges BTC/ETH/SOL daily change,
-       prend la dernière ligne => vecteur => model.predict_proba => prob classe=1.
+    Récupère 1 an data symbol, calcule indicateurs, merges BTC/ETH/SOL, 
+    renvoie prob classe=1 via model.pkl
     """
     logging.info(f"[LIVE fetch] get_probability_for_symbol({symbol})")
 
-    # 1) fetch data 1y
     df_token = _fetch_lc_raw(symbol, "1y")
     if df_token is None or df_token.empty:
         logging.warning(f"[{symbol}] => No data => None")
         return None
 
-    # 2) compute indicators
     df_indic = compute_rsi_macd_atr(df_token)
     if df_indic.empty:
+        logging.warning(f"[{symbol}] => empty after indic => None")
         return None
 
-    # 3) merges BTC/ETH/SOL daily
     df_btc = _fetch_lc_raw("BTC", "1y")
     df_btc = _compute_daily_change(df_btc, "btc_daily_change") if (df_btc is not None and not df_btc.empty) else pd.DataFrame(columns=["date","btc_daily_change"])
 
@@ -190,12 +152,7 @@ def get_probability_for_symbol(symbol: str) -> Optional[float]:
         return None
 
     row = merged.iloc[-1]
-    # 4) needed cols
-    needed_cols = [
-        "close","volume","market_cap","galaxy_score","alt_rank","sentiment",
-        "rsi","macd","atr",
-        "btc_daily_change","eth_daily_change","sol_daily_change"
-    ]
+    needed_cols = COLUMNS_ORDER
     if row[needed_cols].isnull().any():
         logging.warning(f"[{symbol}] => missing col => None")
         return None
@@ -215,14 +172,14 @@ def get_probability_for_symbol(symbol: str) -> Optional[float]:
         row["sol_daily_change"]
     ]).reshape(1, -1)
 
-    mdl = joblib.load(MODEL_FILE)  # On recharge le modèle
-    prob = mdl.predict_proba(arr)[0][1]
-    return prob
+    if not os.path.exists(MODEL_FILE):
+        logging.error(f"[get_probability_for_symbol] no model.pkl => None")
+        return None
 
-############################
-# FONCTIONS interne _fetch_lc_raw, _compute_daily_change
-# (mêmes que data_fetcher, version minimal)
-############################
+    mdl = joblib.load(MODEL_FILE)
+    prob = mdl.predict_proba(arr)[0][1]
+    logging.info(f"[LIVE ML] {symbol} => prob={prob:.4f}")
+    return prob
 
 def _fetch_lc_raw(sym: str, interval="1y") -> Optional[pd.DataFrame]:
     url = f"https://lunarcrush.com/api4/public/coins/{sym}/time-series/v2"
@@ -252,7 +209,9 @@ def _fetch_lc_raw(sym: str, interval="1y") -> Optional[pd.DataFrame]:
             gal= point.get("galaxy_score")
             alt_=point.get("alt_rank")
             senti= point.get("sentiment")
-            rows.append([dt_utc, o, hi, lo, c, vol, mc, gal, alt_, senti])
+            rows.append([
+                dt_utc, o, hi, lo, c, vol, mc, gal, alt_, senti
+            ])
         if not rows:
             return None
         df = pd.DataFrame(rows, columns=[
@@ -276,7 +235,6 @@ def _compute_daily_change(df: pd.DataFrame, col_name:str) -> pd.DataFrame:
     df[col_name] = (df["close"]/df["prev_close"] -1).replace([float("inf"),-float("inf")], None)
     df.drop(columns=["prev_close"],inplace=True)
     return df
-
 
 if __name__=="__main__":
     main()
