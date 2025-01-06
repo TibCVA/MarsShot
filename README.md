@@ -202,3 +202,37 @@ Tu disposes ainsi d’un système complet :
 	•	ML (model.pkl, train_model, etc.).
 
 Bon trading et bonne continuation !
+
+Process pour mettre à jour droplet :
+
+# 1) SSH
+ssh root@10.114.0.3
+
+Password : GOd823100!a
+
+
+# 2) Nettoyer
+docker stop marsshot_container
+docker rm marsshot_container
+docker rmi marsshot
+rm -rf /root/MarsShot
+
+# 3) Recloner
+cd /root
+git clone https://github.com/TibCVA/MarsShot.git
+cd MarsShot
+
+# 4) Docker build
+docker build --no-cache -t marsshot .
+
+# 5) Lancer
+docker run -d --name marsshot_container -p 5000:5000 marsshot
+# => main.py + dashboard.py + start.sh => conteneur up
+
+#6) Vérifier
+docker ps
+
+
+Dashboard :
+http://165.232.69.118:5000/dashboard/SECRET123
+
