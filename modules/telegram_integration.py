@@ -2,8 +2,8 @@
 # coding: utf-8
 
 """
-Script Telegram pour le système MarsShot, avec désactivation des signaux 
-dans run_polling(), afin d'éviter l'erreur "set_wakeup_fd only works in main thread".
+Script Telegram pour le système MarsShot, dans un thread secondaire
+avec python-telegram-bot >= 20, sans erreur d'event loop déjà en cours.
 """
 
 import logging
@@ -19,7 +19,6 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes
 )
 
-# On importe les fonctions "réelles" (portfolio, tokens, etc.)
 from dashboard_data import (
     get_portfolio_state,
     list_tokens_tracked,
@@ -27,7 +26,6 @@ from dashboard_data import (
     get_trades_history,
     emergency_out
 )
-
 from modules.utils import send_telegram_message
 
 CONFIG_FILE = "config.yaml"
@@ -46,7 +44,7 @@ if not BOT_TOKEN:
 logging.basicConfig(level=logging.INFO)
 
 #######################################
-# 1) Commandes Telegram
+# Commandes Telegram
 #######################################
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
@@ -55,8 +53,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/port => Etat global\n"
         "/perf => Performance de chaque position\n"
         "/tokens => Liste tokens suivis\n"
-        "/add <sym> => Ajouter un token\n"
-        "/remove <sym> => Retirer un token\n"
+        "/add <sym> => Ajouter\n"
+        "/remove <sym> => Retirer\n"
         "/emergency => Vendre toutes les positions\n"
     )
     await update.message.reply_text(msg)
@@ -128,7 +126,7 @@ async def cmd_emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 #######################################
-# 2) Rapports auto (dans un thread séparé)
+# Rapports automatiques (thread séparé)
 #######################################
 def send_portfolio_report():
     pf = get_portfolio_state()
@@ -137,55 +135,57 @@ def send_portfolio_report():
         txt += "Positions =>\n"
         for p in pf["positions"]:
             txt += f"- {p['symbol']}: ~{p['value_usdt']} USDT\n"
-
     if BOT_TOKEN and CHAT_ID:
         send_telegram_message(BOT_TOKEN, CHAT_ID, txt)
 
 def schedule_reports():
+    """Thread dédié à l'envoi automatique de rapports"""
     while True:
         now = datetime.datetime.now()
-        # envoi auto à 7h,12h,17h,22h
         if now.minute == 0 and now.hour in [7, 12, 17, 22]:
             send_portfolio_report()
             time.sleep(60)
         time.sleep(30)
 
 #######################################
-# 3) Lancement du Bot Telegram (sans signaux)
+# run_telegram_bot : Lancement dans un thread secondaire
+# => on crée un event loop, on y lance app.run_polling(stop_signals=None),
+# => puis on fait loop.run_forever().
 #######################################
 def run_telegram_bot():
-    """
-    Lance le reporting auto dans un thread 
-    + exécute le bot Telegram dans CE thread avec un event loop asyncio
-      en désactivant la gestion de signaux => stop_signals=None
-    """
-    # 3.1) Lancement du reporting auto
+    # Lancement du reporting auto dans un sous-thread
     t = threading.Thread(target=schedule_reports, daemon=True)
     t.start()
 
-    # 3.2) Coroutine asynchrone qui lance app.run_polling(..., stop_signals=None)
     async def main_coroutine():
         app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-        app.add_handler(CommandHandler("start",    cmd_start))
-        app.add_handler(CommandHandler("port",     cmd_port))
-        app.add_handler(CommandHandler("perf",     cmd_perf))
-        app.add_handler(CommandHandler("tokens",   cmd_tokens))
-        app.add_handler(CommandHandler("add",      cmd_add))
-        app.add_handler(CommandHandler("remove",   cmd_remove))
-        app.add_handler(CommandHandler("emergency",cmd_emergency))
+        app.add_handler(CommandHandler("start",     cmd_start))
+        app.add_handler(CommandHandler("port",      cmd_port))
+        app.add_handler(CommandHandler("perf",      cmd_perf))
+        app.add_handler(CommandHandler("tokens",    cmd_tokens))
+        app.add_handler(CommandHandler("add",       cmd_add))
+        app.add_handler(CommandHandler("remove",    cmd_remove))
+        app.add_handler(CommandHandler("emergency", cmd_emergency))
 
-        logging.info("[TELEGRAM] Bot en polling (async, no signals).")
-        # on désactive l'installation des signaux => plus d'erreur set_wakeup_fd
-        await app.run_polling(stop_signals=None)
+        logging.info("[TELEGRAM] Bot en polling (no signals).")
+        # On désactive la gestion des signaux => stop_signals=None
+        # ET on désactive la fermeture auto du loop => close_loop=False
+        await app.run_polling(stop_signals=None, close_loop=False)
 
-    # 3.3) Création d'un event loop dédié pour ce thread
+    # On crée un event loop dédié à ce thread
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+
+    # On lance main_coroutine() comme tâche
+    loop.create_task(main_coroutine())
+
     try:
-        loop.run_until_complete(main_coroutine())
+        # On boucle "pour toujours" dans ce thread
+        loop.run_forever()
     finally:
-        loop.close()
+        # NE PAS loop.close() => on éviter "Cannot close a running event loop"
+        pass
 
 if __name__ == "__main__":
     run_telegram_bot()
