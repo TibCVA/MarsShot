@@ -27,7 +27,10 @@ Exécution "live" :
 1) data_fetcher.py => produit daily_inference_data.csv
 2) python ml_decision.py => lit ce CSV, charge model.pkl => proba => logs.
 
-Pas de redondance : on NE refait pas le fetch lunarcrush (contrairement à l'ancienne version).
++ en plus : get_probability_for_symbol(...) => fetch "live" LunarCrush
+
+Pas de redondance côté batch, 
+mais on rétablit la fonction live pour main.py.
 """
 
 import os
@@ -127,6 +130,152 @@ def main():
         logging.info(f"[RESULT] {sym} => {p:.4f}")
 
     logging.info("=== END ml_decision ===")
+
+##########################################################
+# AJOUT MINIMAL => get_probability_for_symbol(...) "live"
+##########################################################
+
+import requests
+import pandas as pd
+import numpy as np
+from datetime import datetime
+from typing import Optional
+from indicators import compute_rsi_macd_atr
+
+# Si besoin, on lit la config + clé LunarCrush
+import yaml
+if not os.path.exists("config.yaml"):
+    raise FileNotFoundError("[ERREUR] config.yaml introuvable.")
+
+with open("config.yaml","r") as f:
+    CFG_LC = yaml.safe_load(f)
+
+LUNAR_API_KEY = CFG_LC["lunarcrush"]["api_key"]
+
+def get_probability_for_symbol(symbol: str) -> Optional[float]:
+    """
+    Restauration de la fonction live pour 'main.py'
+    => Récupère 1 an data sur symbol (LunarCrush),
+       calcule RSI/macd/atr, merges BTC/ETH/SOL daily change,
+       prend la dernière ligne => vecteur => model.predict_proba => prob classe=1.
+    """
+    logging.info(f"[LIVE fetch] get_probability_for_symbol({symbol})")
+
+    # 1) fetch data 1y
+    df_token = _fetch_lc_raw(symbol, "1y")
+    if df_token is None or df_token.empty:
+        logging.warning(f"[{symbol}] => No data => None")
+        return None
+
+    # 2) compute indicators
+    df_indic = compute_rsi_macd_atr(df_token)
+    if df_indic.empty:
+        return None
+
+    # 3) merges BTC/ETH/SOL daily
+    df_btc = _fetch_lc_raw("BTC", "1y")
+    df_btc = _compute_daily_change(df_btc, "btc_daily_change") if (df_btc is not None and not df_btc.empty) else pd.DataFrame(columns=["date","btc_daily_change"])
+
+    df_eth = _fetch_lc_raw("ETH", "1y")
+    df_eth = _compute_daily_change(df_eth, "eth_daily_change") if (df_eth is not None and not df_eth.empty) else pd.DataFrame(columns=["date","eth_daily_change"])
+
+    df_sol = _fetch_lc_raw("SOL", "1y")
+    df_sol = _compute_daily_change(df_sol, "sol_daily_change") if (df_sol is not None and not df_sol.empty) else pd.DataFrame(columns=["date","sol_daily_change"])
+
+    merged = df_indic.merge(df_btc, on="date", how="left")
+    merged = merged.merge(df_eth, on="date", how="left")
+    merged = merged.merge(df_sol, on="date", how="left")
+    merged.sort_values("date", inplace=True)
+    if merged.empty:
+        return None
+
+    row = merged.iloc[-1]
+    # 4) needed cols
+    needed_cols = [
+        "close","volume","market_cap","galaxy_score","alt_rank","sentiment",
+        "rsi","macd","atr",
+        "btc_daily_change","eth_daily_change","sol_daily_change"
+    ]
+    if row[needed_cols].isnull().any():
+        logging.warning(f"[{symbol}] => missing col => None")
+        return None
+
+    arr = np.array([
+        row["close"],
+        row["volume"],
+        row["market_cap"],
+        row["galaxy_score"],
+        row["alt_rank"],
+        row["sentiment"],
+        row["rsi"],
+        row["macd"],
+        row["atr"],
+        row["btc_daily_change"],
+        row["eth_daily_change"],
+        row["sol_daily_change"]
+    ]).reshape(1, -1)
+
+    mdl = joblib.load(MODEL_FILE)  # On recharge le modèle
+    prob = mdl.predict_proba(arr)[0][1]
+    return prob
+
+############################
+# FONCTIONS interne _fetch_lc_raw, _compute_daily_change
+# (mêmes que data_fetcher, version minimal)
+############################
+
+def _fetch_lc_raw(sym: str, interval="1y") -> Optional[pd.DataFrame]:
+    url = f"https://lunarcrush.com/api4/public/coins/{sym}/time-series/v2"
+    params = {
+        "key": LUNAR_API_KEY,
+        "bucket": "day",
+        "interval": interval
+    }
+    try:
+        r = requests.get(url, params=params, timeout=30)
+        if r.status_code!=200:
+            return None
+        j = r.json()
+        if "data" not in j or not j["data"]:
+            return None
+        rows=[]
+        for point in j["data"]:
+            ts = point.get("time")
+            if not ts: continue
+            dt_utc = datetime.utcfromtimestamp(ts)
+            o  = point.get("open")
+            c  = point.get("close")
+            hi = point.get("high")
+            lo = point.get("low")
+            vol= point.get("volume_24h")
+            mc = point.get("market_cap")
+            gal= point.get("galaxy_score")
+            alt_=point.get("alt_rank")
+            senti= point.get("sentiment")
+            rows.append([dt_utc, o, hi, lo, c, vol, mc, gal, alt_, senti])
+        if not rows:
+            return None
+        df = pd.DataFrame(rows, columns=[
+            "date","open","high","low","close","volume","market_cap",
+            "galaxy_score","alt_rank","sentiment"
+        ])
+        df.sort_values("date", inplace=True)
+        df.reset_index(drop=True,inplace=True)
+        return df
+    except:
+        return None
+
+def _compute_daily_change(df: pd.DataFrame, col_name:str) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["date",col_name])
+    df = df.sort_values("date").reset_index(drop=True)
+    if "close" not in df.columns:
+        df[col_name]=None
+        return df
+    df["prev_close"] = df["close"].shift(1)
+    df[col_name] = (df["close"]/df["prev_close"] -1).replace([float("inf"),-float("inf")], None)
+    df.drop(columns=["prev_close"],inplace=True)
+    return df
 
 
 if __name__=="__main__":
