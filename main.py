@@ -25,7 +25,7 @@ except ImportError:
 def main():
     """
     Boucle principale du bot de trading.
-    - Tourne en continu, exécute daily_update à 00h30 UTC, intraday check toutes X secondes.
+    - Tourne en continu, exécute daily_update à 13h00 UTC, intraday check toutes X secondes.
     - Gère la persistance dans bot_state.json via load_state/save_state.
     - Lance le bot telegram (run_telegram_bot) dans un thread, si dispo.
     """
@@ -59,20 +59,20 @@ def main():
         try:
             now_utc = datetime.datetime.utcnow()
 
-            # 00h30 => daily update
+            # 13h00 => daily update
             if (
-                now_utc.hour == config["strategy"]["daily_update_hour_utc"]
-                and now_utc.minute >= 30
+                now_utc.hour == config["strategy"]["daily_update_hour_utc"]  # <-- doit être 13 dans config.yaml
+                and now_utc.minute >= 0
                 and not state.get("did_daily_update_today", False)
             ):
                 daily_update(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
 
-            # reset flag avant 00h30
+            # reset flag avant 13h
             if (
-                now_utc.hour == config["strategy"]["daily_update_hour_utc"]
-                and now_utc.minute < 30
+                now_utc.hour == config["strategy"]["daily_update_hour_utc"]  # <-- doit être 13
+                and now_utc.minute < 0
             ):
                 state["did_daily_update_today"] = False
                 save_state(state)
@@ -96,7 +96,7 @@ def main():
 
 def daily_update(state, config, bexec):
     """
-    Appelé 1 fois/jour (à 00h30 UTC).
+    Appelé 1 fois/jour (à 13h00 UTC).
     1) SELL => si prob < sell_threshold (sauf big_gain_exception_pct).
     2) BUY => max 5 tokens (ceux qui ont la plus forte prob >= buy_threshold),
               en répartissant le capital usdt disponible.
@@ -142,7 +142,6 @@ def daily_update(state, config, bexec):
             buy_candidates.append((sym, prob))
 
     # On ne veut acheter que 5 tokens max => on trie par prob desc
-    # ex: buy_candidates = [("FET",0.82), ("AGIX",0.88), ...]
     buy_candidates.sort(key=lambda x: x[1], reverse=True)
     # On garde top 5
     buy_candidates = buy_candidates[:5]
