@@ -5,6 +5,13 @@ from binance.client import Client
 class TradeExecutor:
     def __init__(self, api_key, api_secret):
         self.client = Client(api_key, api_secret)
+    
+    def get_symbol_price(self, asset):
+        if asset=="USDT":
+            return 1.0
+        pair = asset+"USDT"
+        tick = self.client.get_symbol_ticker(symbol=pair)
+        return float(tick["price"])
 
     def sell_all(self, symbol, qty):
         """
