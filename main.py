@@ -26,7 +26,7 @@ except ImportError:
 def main():
     """
     Boucle principale du bot de trading en mode LIVE.
-    - Chaque jour à 20h00 heure de Paris => daily_update_live(...) => SELL/BUY 
+    - Chaque jour à 21h00 heure de Paris => daily_update_live(...) => SELL/BUY 
     - Intraday => intraday_check_real(...) => trailing/stop-loss live
     - Stockage local (positions_meta) dans bot_state.json
     """
@@ -66,10 +66,9 @@ def main():
             # Calculer l'heure locale de Paris
             now_paris = datetime.datetime.now(paris_tz)
 
-            # => Tâche daily à 20h00 PARIS
-            #    (si minute == 0 et qu'on n'a pas fait le daily_update_today)
+            # => Tâche daily à 21h00 PARIS
             if (
-                now_paris.hour == 20
+                now_paris.hour == 21
                 and now_paris.minute == 0
                 and not state.get("did_daily_update_today", False)
             ):
@@ -77,8 +76,8 @@ def main():
                 state["did_daily_update_today"] = True
                 save_state(state)
 
-            # Reset du flag si on n'est plus à 20h
-            if now_paris.hour != 20:
+            # Reset du flag si on n'est plus à 21h
+            if now_paris.hour != 21:
                 state["did_daily_update_today"] = False
                 save_state(state)
 
