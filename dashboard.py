@@ -4,7 +4,8 @@
 """
 Mini-dashboard Flask pour MarsShot.
 Affiche plusieurs onglets (Positions, Perf, Tokens, Trades, Emergency, Logs)
-en mode responsive (Bootstrap), et utilise VOS fonctions existantes.
+en mode responsive (Bootstrap), et utilise VOS fonctions existantes
+pour un trading 100% live.
 """
 
 import os
@@ -12,8 +13,7 @@ import datetime
 import logging
 from flask import Flask, request, jsonify, render_template_string
 
-# === IMPORTANT ===
-# On importe depuis modules/telegram_integration :
+# === On importe les fonctions REELLES (sans fallback) ===
 try:
     from modules.telegram_integration import (
         get_portfolio_state,
@@ -23,9 +23,13 @@ try:
         emergency_out
     )
 except ImportError as e:
-    # Si l'import échoue, on le signale => plus de fallback
+    # Si jamais le module n'est pas trouvé ou que les fonctions n'existent pas,
+    # on arrête tout de suite, pas de fallback.
     raise ImportError(f"[ERREUR] Impossible d'importer telegram_integration: {e}")
 
+########################
+# Model info + Logs
+########################
 def get_model_version_date():
     fname = "model.pkl"
     if os.path.exists(fname):
@@ -37,6 +41,7 @@ def get_model_version_date():
 
 LOG_FILE = "bot.log"
 def tail_logs(num_lines=200):
+    """Lit les `num_lines` dernières lignes de bot.log."""
     if not os.path.exists(LOG_FILE):
         return "Aucun fichier de log bot.log"
     with open(LOG_FILE, "r") as f:
@@ -44,13 +49,13 @@ def tail_logs(num_lines=200):
     lines = lines[-num_lines:]
     return "".join(lines)
 
-###########################################
-# Flask APP
-###########################################
+########################
+# Flask app
+########################
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO)  # logs en console conteneur
 
-SECRET_PWD = "SECRET123"
+SECRET_PWD = "SECRET123"  # à personnaliser, ex: "/dashboard/SECRET123"
 
 TEMPLATE_HTML = r"""
 <!DOCTYPE html>
@@ -125,7 +130,7 @@ TEMPLATE_HTML = r"""
 
   <!-- Positions Tab -->
   <div class="tab-pane fade show active" id="positions" role="tabpanel" aria-labelledby="positions-tab">
-    <h2>Positions Actuelles</h2>
+    <h2>Positions Actuelles (Compte Live)</h2>
     <p>Valeur Totale: {{ pf['total_value_usdt'] }} USDT</p>
     <table class="table table-striped">
       <thead><tr><th>Symbol</th><th>QTY</th><th>Value (USDT)</th></tr></thead>
@@ -249,6 +254,8 @@ setInterval(refreshLogs, 3000);
 </html>
 """
 
+app = Flask(__name__)
+
 @app.route(f"/dashboard/<pwd>", methods=["GET"])
 def dashboard(pwd):
     if pwd != SECRET_PWD:
@@ -285,6 +292,7 @@ def get_logs(pwd):
     return txt, 200, {"Content-Type":"text/plain; charset=utf-8"}
 
 def run_dashboard():
+    logging.info("[DASHBOARD] Starting Flask on 0.0.0.0:5000")
     app.run(host="0.0.0.0", port=5000, debug=False)
 
 if __name__=="__main__":
