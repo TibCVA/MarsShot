@@ -21,9 +21,9 @@ logging.basicConfig(level=logging.INFO)
 
 def get_portfolio_state():
     """
-    Lit le solde spot sur Binance => renvoie positions + total_value_usdt
+    Lit solde SPOT sur Binance => renvoie un dict positions[], total_value_usdt
     """
-    bexec= TradeExecutor(BINANCE_KEY, BINANCE_SECRET)
+    bexec = TradeExecutor(BINANCE_KEY, BINANCE_SECRET)
     client= bexec.client
     info= client.get_account()
     bals= info["balances"]
@@ -36,17 +36,16 @@ def get_portfolio_state():
         free= float(b["free"])
         locked= float(b["locked"])
         qty= free+ locked
-        if qty<=0:
+        if qty<=0: 
             continue
-        if asset=="USDT":
+        if asset.upper()=="USDT":
             val_usdt= qty
         else:
-            # on recup px
             try:
                 px= bexec.get_symbol_price(asset)
                 val_usdt= px* qty
             except:
-                logging.warning(f"[DASHBOARD] Pair {asset}USDT not found => skip")
+                logging.warning(f"[DASHBOARD] No pair {asset}USDT => skipping.")
                 continue
         positions.append({
             "symbol": asset,
@@ -56,17 +55,14 @@ def get_portfolio_state():
         total_val+= val_usdt
 
     return {
-      "positions": positions,
-      "total_value_usdt": round(total_val,2)
+        "positions": positions,
+        "total_value_usdt": round(total_val,2)
     }
 
 def list_tokens_tracked():
     return CONFIG["tokens_daily"]
 
 def get_performance_history():
-    """
-    On n'a pas de PnL => on renvoie un simple dict
-    """
     pf= get_portfolio_state()
     tv= pf["total_value_usdt"]
     return {
@@ -75,30 +71,24 @@ def get_performance_history():
       "1m":{"usdt":0.0,"pct":0.0},
       "3m":{"usdt":0.0,"pct":0.0},
       "1y":{"usdt":0.0,"pct":0.0},
-      "all":{"usdt": tv, "pct":0.0}
+      "all":{"usdt": tv,"pct":0.0}
     }
 
 def get_trades_history():
-    """
-    On peut recup get_my_trades() => placeholders => on renvoie []
-    """
+    # On pourrait recup client.get_my_trades()...
+    # Pour l'instant, on renvoie []
     return []
 
 def emergency_out():
     """
-    Vend tout => real
+    On vend tout sauf USDT
     """
-    bexec= TradeExecutor(BINANCE_KEY, BINANCE_SECRET)
-    client= bexec.client
-    info= client.get_account()
-    bals= info["balances"]
-    for b in bals:
+    bexec= TradeExecutor(BINANCE_KEY,BINANCE_SECRET)
+    info= bexec.client.get_account()
+    for b in info["balances"]:
         asset= b["asset"]
         qty= float(b["free"])+ float(b["locked"])
-        if qty>0 and asset!="USDT":
-            try:
-                val = bexec.sell_all(asset, qty)
-                logging.info(f"[EMERGENCY] sold {asset} => {val:.2f} USDT")
-            except Exception as e:
-                logging.warning(f"[EMERGENCY] error selling {asset} => {e}")
+        if qty>0 and asset.upper()!="USDT":
+            val= bexec.sell_all(asset, qty)
+            logging.info(f"[EMERGENCY] sold {asset} => {val:.2f} USDT")
     logging.info("[EMERGENCY] Tout vendu.")
