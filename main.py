@@ -8,8 +8,8 @@ import yaml
 import os
 import threading
 
-# NOUVEAU => on gère le fuseau horaire
-import pytz  # pip install pytz si nécessaire
+# Gestion du fuseau horaire Europe/Paris
+import pytz
 
 from modules.trade_executor import TradeExecutor
 from modules.utils import send_telegram_message
@@ -26,7 +26,7 @@ except ImportError:
 def main():
     """
     Boucle principale du bot de trading en mode LIVE.
-    - Chaque jour à 18h00 heure de Paris => daily_update_live(...) => SELL/BUY 
+    - Chaque jour à 20h00 heure de Paris => daily_update_live(...) => SELL/BUY 
     - Intraday => intraday_check_real(...) => trailing/stop-loss live
     - Stockage local (positions_meta) dans bot_state.json
     """
@@ -45,34 +45,40 @@ def main():
     )
     logging.info("[MAIN] Starting main loop (LIVE).")
 
+    # Lancement du bot Telegram dans un thread séparé
     t = threading.Thread(target=run_telegram_bot, daemon=True)
     t.start()
 
+    # Chargement de l'état local
     state = load_state()
 
+    # Initialisation TradeExecutor
     bexec = TradeExecutor(
         api_key=config["binance_api"]["api_key"],
         api_secret=config["binance_api"]["api_secret"]
     )
 
-    # Prépare le fuseau de Paris
+    # Fuseau de Paris
     paris_tz = pytz.timezone("Europe/Paris")
 
     while True:
         try:
-            # On calcule l'heure locale de Paris
+            # Calculer l'heure locale de Paris
             now_paris = datetime.datetime.now(paris_tz)
 
-            # => Tâche daily à 18h00 PARIS
-            if now_paris.hour == 18 and now_paris.minute == 0 and not state.get("did_daily_update_today", False):
+            # => Tâche daily à 20h00 PARIS
+            #    (si minute == 0 et qu'on n'a pas fait le daily_update_today)
+            if (
+                now_paris.hour == 20
+                and now_paris.minute == 0
+                and not state.get("did_daily_update_today", False)
+            ):
                 daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
 
-            # reset flag => avant 18h => ex. si minute < 59, ou < 30, etc.
-            # On choisit ici => si hour==18, minute<1 => réinitialiser
-            # OU on peut faire => if hour!=18 => reset
-            if now_paris.hour != 18:
+            # Reset du flag si on n'est plus à 20h
+            if now_paris.hour != 20:
                 state["did_daily_update_today"] = False
                 save_state(state)
 
@@ -100,21 +106,21 @@ def daily_update_live(state, config, bexec):
     tokens = config["tokens_daily"]
     strat  = config["strategy"]
 
-    # Récup solde complet => on vend si prob< threshold
+    # On récupère le solde complet => On vend si prob < threshold
     account_info = bexec.client.get_account()
     balances = account_info["balances"]
     holdings = {}
-    usdt_balance=0.0
+    usdt_balance = 0.0
 
     for b in balances:
-        asset= b["asset"]
-        free= float(b["free"])
+        asset = b["asset"]
+        free  = float(b["free"])
         locked= float(b["locked"])
-        qty= free + locked
-        if asset=="USDT":
-            usdt_balance= qty
-        elif qty>0:
-            holdings[asset]= qty
+        qty   = free + locked
+        if asset == "USDT":
+            usdt_balance = qty
+        elif qty > 0:
+            holdings[asset] = qty
 
     # SELL logic
     for asset, real_qty in holdings.items():
@@ -122,55 +128,55 @@ def daily_update_live(state, config, bexec):
         if prob is None:
             logging.info(f"[DAILY SELL] {asset} => prob=None => skip.")
             continue
-        if prob< strat["sell_threshold"]:
-            meta= state["positions_meta"].get(asset, {})
-            did_skip= meta.get("did_skip_sell_once",False)
-            entry_px= meta.get("entry_px",None)
+        if prob < strat["sell_threshold"]:
+            meta = state["positions_meta"].get(asset, {})
+            did_skip = meta.get("did_skip_sell_once", False)
+            entry_px = meta.get("entry_px", None)
 
-            current_px= bexec.get_symbol_price(asset)
+            current_px = bexec.get_symbol_price(asset)
             if entry_px:
-                ratio= current_px/ entry_px
-                if ratio>= strat["big_gain_exception_pct"] and not did_skip:
+                ratio = current_px / entry_px
+                if ratio >= strat["big_gain_exception_pct"] and not did_skip:
                     meta["did_skip_sell_once"] = True
-                    state["positions_meta"][asset]= meta
+                    state["positions_meta"][asset] = meta
                     logging.info(f"[DAILY SELL SKIP big gain] {asset}, ratio={ratio:.2f}, prob={prob:.2f}")
                     continue
 
-            sold_val= bexec.sell_all(asset, real_qty)
+            sold_val = bexec.sell_all(asset, real_qty)
             logging.info(f"[DAILY SELL LIVE] {asset}, prob={prob:.2f}, sold_val={sold_val:.2f}")
             if asset in state["positions_meta"]:
                 del state["positions_meta"][asset]
             save_state(state)
 
-    # BUY => top5
-    buy_candidates=[]
+    # BUY => top 5
+    buy_candidates = []
     for sym in tokens:
         if sym in holdings:
             continue
-        pr= get_probability_for_symbol(sym)
-        if pr and pr>= strat["buy_threshold"]:
+        pr = get_probability_for_symbol(sym)
+        if pr and pr >= strat["buy_threshold"]:
             buy_candidates.append((sym, pr))
 
-    buy_candidates.sort(key=lambda x:x[1], reverse=True)
-    buy_candidates= buy_candidates[:5]
+    buy_candidates.sort(key=lambda x: x[1], reverse=True)
+    buy_candidates = buy_candidates[:5]
 
-    if buy_candidates and usdt_balance>10:
-        alloc= usdt_balance / len(buy_candidates)
+    if buy_candidates and usdt_balance > 10:
+        alloc = usdt_balance / len(buy_candidates)
         for sym, pb in buy_candidates:
-            qty_bought, avg_px= bexec.buy(sym, alloc)
-            if qty_bought>0:
+            qty_bought, avg_px = bexec.buy(sym, alloc)
+            if qty_bought > 0:
                 logging.info(f"[DAILY BUY LIVE] {sym}, prob={pb:.2f}, cost={alloc:.2f}, px={avg_px:.4f}")
-                state["positions_meta"][sym]= {
+                state["positions_meta"][sym] = {
                     "entry_px": avg_px,
                     "did_skip_sell_once": False,
                     "partial_sold": False,
                     "max_price": avg_px
                 }
-                usdt_balance-= alloc
+                usdt_balance -= alloc
                 save_state(state)
 
     logging.info("[DAILY UPDATE] Done daily_update (live).")
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
