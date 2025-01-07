@@ -16,9 +16,9 @@ from indicators import compute_rsi_macd_atr
 # CONFIGURATION GLOBALE
 ########################################
 
-LUNAR_API_KEY = "85zhfo9yl9co22cl7kw2sucossm59awchvwf8s8ub"   # <-- Remplacez par votre clé
-SHIFT_DAYS = 2        # Label => +5% sur 2 jours
-THRESHOLD = 0.05      # 0.05 => +5%
+LUNAR_API_KEY = "85zhfo9yl9co22cl7kw2sucossm59awchvwf8s8ub"  # <-- Remplacez par votre clé
+SHIFT_DAYS = 2         # Label => +5% sur 2 jours
+THRESHOLD = 0.05       # 0.05 => +5%
 OUTPUT_CSV = "training_data.csv"
 LOG_FILE   = "build_csv.log"
 
@@ -31,7 +31,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 logging.info("=== START build_csv (2 ans) ===")
-
 
 ########################################
 # LISTE DES 321 ALTCOINS
@@ -357,44 +356,39 @@ TOKENS = [
 ]
 
 ########################################
-# NOUVELLE FONCTION DE RECUP 2 ANS
+# FONCTION DE RÉCUP 2 ANS AVEC START/END
 ########################################
 
 def fetch_lunar_data_2y(symbol: str) -> Optional[pd.DataFrame]:
     """
-    Récupère ~2 ans de données (2x 1 an) sur l'endpoint LunarCrush,
-    en concaténant plusieurs appels (start_date = now, now-1an).
-    Conserve la structure (date, open, close, high, low, volume, market_cap, galaxy_score, alt_rank, sentiment).
+    Récupère ~2 ans de données via deux appels (2 x 365 jours).
+    On spécifie 'start' et 'end' en timestamps (secondes).
+    On concatène les DataFrames.
     """
-    # On va faire 2 segments de 1 an (365 jours), en partant d'aujourd'hui (UTC).
-    # On concatène ensuite les dataFrames résultants.
 
-    # Date de fin = now
+    # "end_date" = maintenant UTC
     end_date = datetime.utcnow()
-
-    # On stocke les DataFrames dans une liste
+    # On fera 2 segments (chaque segment = 1 an ~ 365 jours)
     dfs = []
 
-    # On boucle 2 fois (pour 2 ans).
     for _ in range(2):
         start_date = end_date - timedelta(days=365)
-        # format YYYY-MM-DD
-        start_str = start_date.strftime("%Y-%m-%d")
+        # Conversion en timestamp (secondes)
+        end_ts = int(end_date.timestamp())
+        start_ts = int(start_date.timestamp())
 
-        # Paramètres pour la requête
         url = f"https://lunarcrush.com/api4/public/coins/{symbol}/time-series/v2"
         params = {
             "key": LUNAR_API_KEY,
             "bucket": "day",
-            "interval": "1y",
-            # On ajoute le paramètre "start" pour spécifier la date de début
-            "start": start_str
+            "interval": "1y",    # Cf. doc
+            "start": start_ts,   # en secondes
+            "end": end_ts        # en secondes
         }
 
         try:
             r = requests.get(url, params=params, timeout=30)
-            logging.info(f"[LUNAR 2Y] {symbol} => HTTP {r.status_code} (start={start_str})")
-
+            logging.info(f"[LUNAR 2Y] {symbol} => HTTP {r.status_code} (start={start_ts}, end={end_ts})")
             if r.status_code != 200:
                 logging.warning(f"[WARN] {symbol} => code={r.status_code}, skip segment.")
             else:
@@ -421,29 +415,32 @@ def fetch_lunar_data_2y(symbol: str) -> Optional[pd.DataFrame]:
                         ])
 
                     if rows:
-                        df_tmp = pd.DataFrame(rows, columns=[
-                            "date","open","close","high","low","volume","market_cap",
-                            "galaxy_score","alt_rank","sentiment"
-                        ])
+                        df_tmp = pd.DataFrame(
+                            rows,
+                            columns=["date","open","close","high","low","volume","market_cap",
+                                     "galaxy_score","alt_rank","sentiment"]
+                        )
                         dfs.append(df_tmp)
                 else:
                     logging.warning(f"[WARN] {symbol} => segment data vide => skip.")
         except Exception as e:
             logging.error(f"[ERROR] {symbol} => {e}")
 
-        # Réduit la end_date pour la prochaine itération (segment précédent)
+        # On décale "end_date" d'un an pour la boucle suivante
         end_date = start_date
 
-    # Si aucun DF n'a été récupéré, on return None
+    # Si rien récupéré
     if not dfs:
         return None
 
-    # Concat final
+    # Concatène les 2 segments, trie par date, supprime doublons
     df_out = pd.concat(dfs, ignore_index=True)
     df_out.sort_values("date", inplace=True)
     df_out.drop_duplicates(subset=["date"], keep="first", inplace=True)
     df_out.reset_index(drop=True, inplace=True)
+
     return df_out
+
 
 ########################################
 # FONCTIONS UTILES (IDENTIQUES)
@@ -510,7 +507,7 @@ def main():
     else:
         df_sol = pd.DataFrame(columns=["date","sol_daily_change"])
 
-    # 4) Boucle sur altcoins (2 ans)
+    # 4) Boucle sur altcoins
     from indicators import compute_rsi_macd_atr
 
     all_dfs = []
@@ -520,13 +517,12 @@ def main():
         sym = tk["symbol"]
         logging.info(f"[ALT {i}/{nb_tokens}] => {sym}")
 
-        # Récupération 2 ans
         df_alt = fetch_lunar_data_2y(sym)
         if df_alt is None or df_alt.empty:
             logging.warning(f"[SKIP] {sym} => no data.")
             continue
 
-        # Label (5% sur 2 jours)
+        # Ajout du label (5% sur 2 jours)
         df_alt = compute_label(df_alt, SHIFT_DAYS, THRESHOLD)
 
         # RSI, MACD, ATR
@@ -534,7 +530,6 @@ def main():
 
         # Copie du label
         df_ind["label"] = df_alt["label"]
-        # On enlève les lignes sans label
         df_ind.dropna(subset=["label"], inplace=True)
 
         # Ajout 'symbol'
