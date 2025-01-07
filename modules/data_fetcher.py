@@ -45,7 +45,7 @@ binance_client = Client(BINANCE_KEY, BINANCE_SECRET)
 # Pour la partie daily => LunarCrush
 LUNAR_API_KEY = CONFIG["lunarcrush"]["api_key"]
 INTERVAL      = "1y"
-SLEEP_BETWEEN_TOKENS = 6
+SLEEP_BETWEEN_TOKENS = 15
 
 # --------------------------------------------------------
 # Intraday => Binance
