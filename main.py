@@ -26,7 +26,7 @@ except ImportError:
 def main():
     """
     Boucle principale du bot de trading en mode LIVE.
-    - Chaque jour à 01h00 heure de Paris => daily_update_live(...) => SELL/BUY
+    - Chaque jour à 02h00 heure de Paris => daily_update_live(...) => SELL/BUY
     - Intraday => intraday_check_real(...) => trailing/stop-loss live
     - Stockage local (positions_meta) dans bot_state.json
     """
@@ -39,7 +39,7 @@ def main():
         config = yaml.safe_load(f)
 
     logging.basicConfig(
-        filename=config["logging"]["file"],  # "bot.log" par ex.
+        filename=config["logging"]["file"],  # ex: "bot.log"
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s"
     )
@@ -67,24 +67,24 @@ def main():
         try:
             now_paris = datetime.datetime.now(paris_tz)
             hour_p = now_paris.hour
-            min_p  = now_paris.minute
+            min_p = now_paris.minute
 
-            # => Tâche daily à 01h00 PARIS
+            # => Tâche daily à 02h00 PARIS
             if (
-                hour_p == 1
+                hour_p == 2
                 and min_p == 0
                 and not state.get("did_daily_update_today", False)
             ):
-                logging.info("[MAIN] It's 01h00 in Paris => launching daily_update_live.")
+                logging.info("[MAIN] It's 02h00 in Paris => launching daily_update_live.")
                 daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today flag => True.")
 
-            # Reset du flag si on n'est plus à 01h
-            if hour_p != 1:
+            # Reset du flag si on n'est plus à 02h
+            if hour_p != 2:
                 if state.get("did_daily_update_today", False):
-                    logging.info("[MAIN] hour!=1 => reset did_daily_update_today=False.")
+                    logging.info("[MAIN] hour!=2 => reset did_daily_update_today=False.")
                 state["did_daily_update_today"] = False
                 save_state(state)
 
@@ -102,10 +102,11 @@ def main():
 
         time.sleep(10)
 
+
 def daily_update_live(state, config, bexec):
     """
     Achète/Vend en direct => 
-     1) SELL si prob<sell_threshold (sauf skip big_gain_exception_pct).
+     1) SELL si prob < sell_threshold (sauf skip big_gain_exception_pct).
      2) BUY top 5 tokens => en utilisant USDT du compte.
     """
     logging.info("[DAILY UPDATE] Starting daily_update (live).")
