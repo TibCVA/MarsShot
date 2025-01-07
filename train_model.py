@@ -30,9 +30,9 @@ LOG_FILE   = "train_model.log"
 CSV_FILE   = "training_data.csv"
 MODEL_FILE = "model.pkl"
 
-FINAL_TEST_RATIO = 0.2
-N_ITER          = 35    # (plus élevé qu'avant)
-TSCV_SPLITS     = 11    # un peu plus que 10
+FINAL_TEST_RATIO = 0.1
+N_ITER          = 30    # (plus élevé qu'avant)
+TSCV_SPLITS     = 10    # un peu plus que 10
 
 logging.basicConfig(
     filename=LOG_FILE,
