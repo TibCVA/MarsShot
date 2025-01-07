@@ -32,8 +32,8 @@ CSV_FILE   = "training_data.csv"
 MODEL_FILE = "model.pkl"
 
 FINAL_TEST_RATIO = 0.1
-N_ITER          = 30    # Paramètre pour la RandomizedSearch
-TSCV_SPLITS     = 10    # Nombre de splits en TimeSeriesSplit
+N_ITER          = 25    # Paramètre pour la RandomizedSearch
+TSCV_SPLITS     = 8    # Nombre de splits en TimeSeriesSplit
 
 logging.basicConfig(
     filename=LOG_FILE,
