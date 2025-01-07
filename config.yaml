@@ -35,6 +35,10 @@ exchanges:
       "BB": "BB"
       "AAVE": "AAVE"
       "SAND": "SAND"
+      "AVA": "AVA"
+      "REI": "REI"
+      "LUNA": "LUNA"
+      "ALICE": "ALICE"
       # Si besoin, ajoute d'autres mappings => "MYTOKEN_LC": "MYTOKEN_BNB"
 
 binance_api:
@@ -65,7 +69,10 @@ tokens_daily:
   - "BB"
   - "AAVE"
   - "SAND"
-
+  - "AVA"
+  - "REI"
+  - "LUNA"
+  - "ALICE"
 strategy:
   capital_initial: 821.0
   buy_threshold: 0.7
