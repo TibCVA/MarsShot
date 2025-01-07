@@ -5,8 +5,11 @@
 ml_decision.py
 --------------
 But : 
- - Lire daily_inference_data.csv, charger model.pkl, calculer la proba (batch).
- - get_probability_for_symbol(...) => usage "live" pour main.py (fetch 1y LunarCrush).
+  1) Lire daily_inference_data.csv, charger model.pkl, calculer la proba => batch.
+  2) Fournir get_probability_for_symbol(...) pour usage live dans main.py 
+     (récup 1 an de data sur LunarCrush, calcule RSI/MACD/ATR, merges 
+      btc_daily_change, eth_daily_change, sol_daily_change, 
+      renvoie proba de hausse (classe=1)).
 """
 
 import os
@@ -15,22 +18,23 @@ import numpy as np
 import pandas as pd
 import joblib
 
-# ------------------------
-# Config Fichiers & Logs
-# ------------------------
+# --------------------------------
+# Fichiers / colonnes pour le mode "batch"
+# --------------------------------
 MODEL_FILE = "model.pkl"
 INPUT_CSV  = "daily_inference_data.csv"
 LOG_FILE   = "ml_decision.log"
 
-# Dans build_csv.py on a besoin de :
-# [close, volume, market_cap, galaxy_score, alt_rank, sentiment,
-#  rsi, macd, atr, btc_daily_change, eth_daily_change, sol_daily_change]
+# L'ordre exact des features pour le modèle
 COLUMNS_ORDER = [
     "close","volume","market_cap","galaxy_score","alt_rank","sentiment",
     "rsi","macd","atr",
     "btc_daily_change","eth_daily_change","sol_daily_change"
 ]
 
+# --------------------------------
+# Logging global pour ce module
+# --------------------------------
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
@@ -40,32 +44,28 @@ logging.info("=== START ml_decision ===")
 
 def main():
     """
-    1) Vérifie la présence du modèle model.pkl
-    2) Vérifie la présence du CSV daily_inference_data.csv
-    3) Charge le modèle, lit le CSV
-    4) Construit X => (N,12)
-    5) predict_proba => prob classe=1
-    6) log & print
+    Mode batch : on lit daily_inference_data.csv => on applique model.pkl => 
+    on logge les probabilités de hausse pour chaque token (classe=1).
     """
-    # 1) Check model
+    # 1) Vérifier la présence du modèle
     if not os.path.exists(MODEL_FILE):
         msg = f"[ERROR] {MODEL_FILE} introuvable => impossible de prédire."
         logging.error(msg)
         print(msg)
         return
 
-    # 2) Check CSV
+    # 2) Vérifier le CSV
     if not os.path.exists(INPUT_CSV):
         msg = f"[ERROR] {INPUT_CSV} introuvable => impossible de prédire."
         logging.error(msg)
         print(msg)
         return
 
-    # 3) Load model
+    # 3) Charger le modèle
     model = joblib.load(MODEL_FILE)
-    logging.info(f"[INFO] Model {MODEL_FILE} chargé.")
+    logging.info(f"[INFO] Modèle {MODEL_FILE} chargé.")
 
-    # 4) Read CSV
+    # 4) Lire le CSV
     df = pd.read_csv(INPUT_CSV)
     if df.empty:
         msg = "[WARN] daily_inference_data.csv est vide => aucune prédiction."
@@ -73,57 +73,55 @@ def main():
         print(msg)
         return
 
-    # 5) Check columns
+    # 5) Vérifier qu'on a bien toutes les colonnes
     needed_cols = COLUMNS_ORDER + ["symbol"]
-    missing = [c for c in needed_cols if c not in df.columns]
-    if missing:
-        msg = f"[ERROR] Colonnes manquantes => {missing}"
-        logging.error(msg)
-        print(msg)
-        return
+    for col in needed_cols:
+        if col not in df.columns:
+            msg = f"[ERROR] Colonne manquante => {col}"
+            logging.error(msg)
+            print(msg)
+            return
 
-    # Drop NaN
+    # 6) Drop les lignes NaN
     df_before = len(df)
     df.dropna(subset=COLUMNS_ORDER, inplace=True)
     df_after = len(df)
     if df_after < df_before:
-        logging.warning(f"[WARN] Drop {df_before-df_after} tokens => NaN dans colonnes d'entrée.")
+        logging.warning(f"[WARN] On drop {df_before - df_after} tokens => NaN.")
 
     if df.empty:
-        msg = "[WARN] Plus aucune ligne => pas de prédiction."
+        msg = "[WARN] Toutes les lignes ont été drop => plus rien à prédire."
         logging.warning(msg)
         print(msg)
         return
 
-    # 6) Build X => (N,12)
+    # 7) Construire la matrice d'entrée (N,12)
     X = df[COLUMNS_ORDER].values.astype(float)
 
-    # 7) predict_proba
+    # 8) predict_proba
     probs = model.predict_proba(X)  # shape (N,2)
-    prob_1 = probs[:,1]
+    prob_1 = probs[:,1]            # prob de la classe=1
 
-    # 8) log results
+    # 9) On log/affiche
     print("=== Probabilités de hausse (classe=1) ===")
     for i, row in df.iterrows():
         sym = row["symbol"]
-        p = prob_1[i]
+        p   = prob_1[i]
         print(f"{sym} => {p:.4f}")
         logging.info(f"[RESULT] {sym} => {p:.4f}")
 
     logging.info("=== END ml_decision ===")
 
-
-# ---------------------------------------------------------
-# Partie "LIVE" => get_probability_for_symbol(...) 
-# ---------------------------------------------------------
+# ---------------------------------------------------
+# Partie LIVE => get_probability_for_symbol(symbol)
+# ---------------------------------------------------
 import requests
 from datetime import datetime
 from typing import Optional
 from indicators import compute_rsi_macd_atr
 
-# On lit la config => clé LunarCrush
+# On lit la config + clé LunarCrush
 import yaml
-
 if not os.path.exists("config.yaml"):
     raise FileNotFoundError("[ERREUR] config.yaml introuvable.")
 
@@ -134,9 +132,11 @@ LUNAR_API_KEY = CFG_LC["lunarcrush"]["api_key"]
 
 def get_probability_for_symbol(symbol: str) -> Optional[float]:
     """
-    Récupère 1 an data sur `symbol` depuis LunarCrush,
-    calcule RSI/MACD/ATR, merge daily_change BTC/ETH/SOL,
-    sort par date => prend la dernière ligne => proba classe=1.
+    Récupère 1 an de data daily sur 'symbol' (LunarCrush).
+    Calcule RSI,MACD,ATR => df_indic.
+    Merge df_btc/df_eth/df_sol => date, btc_daily_change, ...
+    => Construit le vecteur => model.predict_proba => prob classe=1.
+    Evite la duplication de colonnes en ne gardant QUE "date","xxx_daily_change".
     """
     logging.info(f"[LIVE fetch] get_probability_for_symbol({symbol})")
 
@@ -145,28 +145,42 @@ def get_probability_for_symbol(symbol: str) -> Optional[float]:
         logging.warning(f"[{symbol}] => No data => None")
         return None
 
-    df_ind = compute_rsi_macd_atr(df_token)
-    if df_ind.empty:
+    # Calcul RSI, MACD, ATR
+    df_indic = compute_rsi_macd_atr(df_token)
+    if df_indic.empty:
         logging.warning(f"[{symbol}] => empty after compute_rsi_macd_atr => None")
         return None
 
-    # => On ne conserve que daily_change de BTC/ETH/SOL
+    # Récup BTC daily change
     df_btc = _fetch_lc_raw("BTC", "1y")
-    df_btc = _compute_daily_change(df_btc, "btc_daily_change") if (df_btc is not None and not df_btc.empty) else pd.DataFrame(columns=["date","btc_daily_change"])
+    df_btc = _compute_daily_change(df_btc, "btc_daily_change") if (df_btc is not None and not df_btc.empty) else None
+    if df_btc is not None and not df_btc.empty:
+        # IMPORTANT: on garde UNIQUEMENT la date + daily_change
+        df_btc = df_btc[["date","btc_daily_change"]]
 
+    # Récup ETH daily
     df_eth = _fetch_lc_raw("ETH", "1y")
-    df_eth = _compute_daily_change(df_eth, "eth_daily_change") if (df_eth is not None and not df_eth.empty) else pd.DataFrame(columns=["date","eth_daily_change"])
+    df_eth = _compute_daily_change(df_eth, "eth_daily_change") if (df_eth is not None and not df_eth.empty) else None
+    if df_eth is not None and not df_eth.empty:
+        df_eth = df_eth[["date","eth_daily_change"]]
 
+    # Récup SOL daily
     df_sol = _fetch_lc_raw("SOL", "1y")
-    df_sol = _compute_daily_change(df_sol, "sol_daily_change") if (df_sol is not None and not df_sol.empty) else pd.DataFrame(columns=["date","sol_daily_change"])
+    df_sol = _compute_daily_change(df_sol, "sol_daily_change") if (df_sol is not None and not df_sol.empty) else None
+    if df_sol is not None and not df_sol.empty:
+        df_sol = df_sol[["date","sol_daily_change"]]
 
-    # merges
-    merged = df_ind.merge(df_btc, on="date", how="left")
-    merged = merged.merge(df_eth, on="date", how="left")
-    merged = merged.merge(df_sol, on="date", how="left")
+    # Merge final
+    merged = df_indic.copy()
+    if df_btc is not None:
+        merged = merged.merge(df_btc, on="date", how="left")
+    if df_eth is not None:
+        merged = merged.merge(df_eth, on="date", how="left")
+    if df_sol is not None:
+        merged = merged.merge(df_sol, on="date", how="left")
 
     merged.sort_values("date", inplace=True)
-    merged.reset_index(drop=True,inplace=True)
+    merged.reset_index(drop=True, inplace=True)
 
     if merged.empty:
         logging.warning(f"[{symbol}] => merged empty => None")
@@ -175,7 +189,7 @@ def get_probability_for_symbol(symbol: str) -> Optional[float]:
     # On prend la dernière ligne
     row = merged.iloc[-1]
 
-    # On check si l'une des colonnes du "COLUMNS_ORDER" est NaN
+    # Vérifier la présence de toutes les colonnes du modèle
     needed_cols = COLUMNS_ORDER
     if row[needed_cols].isnull().any():
         logging.warning(f"[{symbol}] => missing col => None")
@@ -197,55 +211,56 @@ def get_probability_for_symbol(symbol: str) -> Optional[float]:
     ]).reshape(1, -1)
 
     if not os.path.exists(MODEL_FILE):
-        logging.error("[LIVE fetch] model.pkl introuvable => None")
+        logging.error("[LIVE fetch] model.pkl absent => None")
         return None
 
-    mdl = joblib.load(MODEL_FILE)
-    prob = mdl.predict_proba(arr)[0][1]
+    model = joblib.load(MODEL_FILE)
+    prob = model.predict_proba(arr)[0][1]
     logging.info(f"[LIVE ML] {symbol} => prob={prob:.4f}")
     return prob
 
-
-# ---------------------------------------------------------
-# Fonctions internes -> fetch & daily_change
-# ---------------------------------------------------------
+# -------------------------------------------
+# Fonctions internes : _fetch_lc_raw, _compute_daily_change
+# -------------------------------------------
 def _fetch_lc_raw(sym: str, interval="1y") -> Optional[pd.DataFrame]:
-    base_url = f"https://lunarcrush.com/api4/public/coins/{sym}/time-series/v2"
+    """
+    Récupère la data daily sur LunarCrush => [date,open,high,low,close,volume,market_cap,galaxy_score,alt_rank,sentiment]
+    Tri par date => DF ou None
+    """
+    url = f"https://lunarcrush.com/api4/public/coins/{sym}/time-series/v2"
     params = {
         "key": LUNAR_API_KEY,
         "bucket": "day",
         "interval": interval
     }
     try:
-        r = requests.get(base_url, params=params, timeout=30)
-        if r.status_code!=200:
+        r = requests.get(url, params=params, timeout=30)
+        if r.status_code != 200:
             logging.warning(f"[_fetch_lc_raw] {sym} => HTTP {r.status_code}")
             return None
         j = r.json()
         if "data" not in j or not j["data"]:
-            logging.warning(f"[_fetch_lc_raw] {sym} => 'data' vide")
             return None
-
         rows = []
         for point in j["data"]:
-            unix_ts = point.get("time")
-            if not unix_ts:
+            ts = point.get("time")
+            if not ts:
                 continue
-            dt_utc = datetime.utcfromtimestamp(unix_ts)
-            o   = point.get("open")
-            c   = point.get("close")
-            hi  = point.get("high")
-            lo  = point.get("low")
-            vol = point.get("volume_24h")
-            mc  = point.get("market_cap")
-            gal = point.get("galaxy_score")
-            alt_= point.get("alt_rank")
-            st  = point.get("sentiment")
-            rows.append([dt_utc, o, hi, lo, c, vol, mc, gal, alt_, st])
-
+            dt_utc = datetime.utcfromtimestamp(ts)
+            o  = point.get("open")
+            c  = point.get("close")
+            hi = point.get("high")
+            lo = point.get("low")
+            vol= point.get("volume_24h")
+            mc = point.get("market_cap")
+            gal= point.get("galaxy_score")
+            alt_=point.get("alt_rank")
+            senti= point.get("sentiment")
+            rows.append([
+                dt_utc, o, hi, lo, c, vol, mc, gal, alt_, senti
+            ])
         if not rows:
             return None
-
         df = pd.DataFrame(rows, columns=[
             "date","open","high","low","close","volume","market_cap",
             "galaxy_score","alt_rank","sentiment"
@@ -254,22 +269,26 @@ def _fetch_lc_raw(sym: str, interval="1y") -> Optional[pd.DataFrame]:
         df.reset_index(drop=True,inplace=True)
         return df
     except Exception as e:
-        logging.error(f"[_fetch_lc_raw] {sym} => {e}")
+        logging.error(f"[ERROR _fetch_lc_raw] {sym} => {e}")
         return None
 
-def _compute_daily_change(df: pd.DataFrame, col_name:str) -> pd.DataFrame:
+def _compute_daily_change(df: pd.DataFrame, col_name: str) -> pd.DataFrame:
+    """
+    Identique build_csv => daily_change(t)=close(t-1)/close(t)-1
+    Retourne DF (mêmes colonnes qu'avant + col_name).
+    L'appelant fera ensuite df_btc = df_btc[['date', 'btc_daily_change']]
+    """
     if df is None or df.empty:
-        return pd.DataFrame(columns=["date",col_name])
-    df = df.sort_values("date").reset_index(drop=True)
-    if "close" not in df.columns:
-        df[col_name]= None
-        return df
+        return pd.DataFrame(columns=["date", col_name])
+    dff = df.copy().sort_values("date").reset_index(drop=True)
+    if "close" not in dff.columns:
+        dff[col_name] = None
+        return dff
+    dff["prev_close"] = dff["close"].shift(1)
+    dff[col_name] = (dff["close"] / dff["prev_close"] - 1).replace([float("inf"),-float("inf")], None)
+    dff.drop(columns=["prev_close"], inplace=True)
+    return dff
 
-    df["prev_close"] = df["close"].shift(1)
-    df[col_name] = (df["close"]/df["prev_close"] -1).replace([float("inf"), -float("inf")], None)
-    df.drop(columns=["prev_close"], inplace=True)
-    return df
-
-
+# -------------------------------------------
 if __name__=="__main__":
     main()
