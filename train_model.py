@@ -2,7 +2,8 @@
 # coding: utf-8
 
 """
-train_model.py - 
+train_model.py
+Inclut désormais 'sol_daily_change' dans les features, en plus de BTC et ETH.
 """
 
 import os
@@ -31,15 +32,15 @@ CSV_FILE   = "training_data.csv"
 MODEL_FILE = "model.pkl"
 
 FINAL_TEST_RATIO = 0.1
-N_ITER          = 30    # (plus élevé qu'avant)
-TSCV_SPLITS     = 10    # un peu plus que 10
+N_ITER          = 30    # Paramètre pour la RandomizedSearch
+TSCV_SPLITS     = 10    # Nombre de splits en TimeSeriesSplit
 
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
-logging.info("=== START train_model (V8bis => f1 expanded) ===")
+logging.info("=== START train_model ===")
 
 def main():
     if not os.path.exists(CSV_FILE):
@@ -51,20 +52,26 @@ def main():
         print("[ERREUR] label manquant.")
         return
 
+    # Ajout de 'sol_daily_change' dans la liste des features
     features = [
         "close", "volume", "market_cap",
         "galaxy_score", "alt_rank", "sentiment",
         "rsi", "macd", "atr",
-        "btc_daily_change", "eth_daily_change"
+        "btc_daily_change", "eth_daily_change",
+        "sol_daily_change"  # <-- NOUVEAU
     ]
+
     missing = [c for c in features if c not in df.columns]
     if missing:
         print("[ERREUR] Missing columns:", missing)
         return
 
-    sub = df.dropna(subset=features+["label"]).copy()
-    sub.sort_values("date", inplace=True)  # s'assurer du tri chrono
-    cutoff = int((1.0 - FINAL_TEST_RATIO)*len(sub))
+    # On retire toutes les lignes où l'une des features ou 'label' est NaN
+    sub = df.dropna(subset=features + ["label"]).copy()
+    sub.sort_values("date", inplace=True)  # S'assurer du tri chronologique
+
+    # Découpe en train/val vs. final_test
+    cutoff = int((1.0 - FINAL_TEST_RATIO) * len(sub))
     train_val_df = sub.iloc[:cutoff].copy()
     final_test_df = sub.iloc[cutoff:].copy()
 
@@ -76,6 +83,7 @@ def main():
     X_test = final_test_df[features]
     y_test = final_test_df["label"].astype(int)
 
+    # Choix du pipeline selon la disponibilité de SMOTE
     if IMBLEARN_OK:
         steps = [
             ("scaler", StandardScaler()),
@@ -85,7 +93,6 @@ def main():
         pipe_class = ImbPipeline
         logging.info("[build_model] => SMOTE activé")
     else:
-        from sklearn.pipeline import Pipeline as SkPipeline
         steps = [
             ("scaler", StandardScaler()),
             ("clf", RandomForestClassifier(
@@ -98,6 +105,7 @@ def main():
 
     pipe = pipe_class(steps)
 
+    # Grille de recherche hyperparamètres
     param_dist = {
         "clf__n_estimators":      [100, 200, 300, 500],
         "clf__max_depth":         [10, 15, 20, None],
@@ -114,7 +122,7 @@ def main():
         estimator=pipe,
         param_distributions=param_dist,
         n_iter=N_ITER,
-        scoring="f1",  # f1 (binary => pos_label=1)
+        scoring="f1",  # f1 pour classification binaire (pos_label=1)
         cv=tscv,
         verbose=1,
         random_state=42,
@@ -130,24 +138,25 @@ def main():
 
     final_model = search.best_estimator_
 
-    # Évaluation finale
+    # Évaluation finale sur la portion "final_test"
     y_pred_test = final_model.predict(X_test)
     rep_test = classification_report(y_test, y_pred_test, digits=3)
     print("\n=== [Hold-out final test] ===")
     print(rep_test)
-    logging.info("\n[Hold-out final test]\n"+rep_test)
+    logging.info("\n[Hold-out final test]\n" + rep_test)
 
-    # Re-fit sur tout X_tv
+    # Re-fit sur tout train+val
     final_model.fit(X_tv, y_tv)
     y_pred_in = final_model.predict(X_tv)
     rep_in = classification_report(y_tv, y_pred_in, digits=3)
     print("\n=== [In-sample 100%] ===")
     print(rep_in)
-    logging.info("\n[In-sample 100%]\n"+rep_in)
+    logging.info("\n[In-sample 100%]\n" + rep_in)
 
+    # Sauvegarde du modèle
     joblib.dump(final_model, MODEL_FILE)
     logging.info(f"Modèle final sauvegardé => {MODEL_FILE}")
     print(f"[OK] Modèle final sauvegardé => {MODEL_FILE}")
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
