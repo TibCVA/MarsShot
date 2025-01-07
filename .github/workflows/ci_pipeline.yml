@@ -60,7 +60,7 @@ jobs:
 
       - name: Train Model
         run: |
-          python train_model.py --n_iter 25
+          python train_model.py --n_iter 50
 
       - name: Show Logs
         run: |
