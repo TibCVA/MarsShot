@@ -6,7 +6,7 @@ import pandas as pd
 import time
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 # Import de la fonction qui calcule RSI, MACD, ATR
@@ -30,7 +30,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
-logging.info("=== START build_csv ===")
+logging.info("=== START build_csv (2 ans) ===")
 
 
 ########################################
@@ -357,78 +357,97 @@ TOKENS = [
 ]
 
 ########################################
-# FONCTIONS UTILES
+# NOUVELLE FONCTION DE RECUP 2 ANS
 ########################################
 
-def fetch_lunar_data(symbol: str) -> Optional[pd.DataFrame]:
+def fetch_lunar_data_2y(symbol: str) -> Optional[pd.DataFrame]:
     """
-    Récupère l'historique daily depuis l'endpoint:
-      https://lunarcrush.com/api4/public/coins/<symbol>/time-series/v2
-    Paramètres: bucket=day, interval=1y.
-
-    Champs qu'on conserve:
-      date, open, close, high, low, volume, market_cap,
-      galaxy_score, alt_rank, sentiment
+    Récupère ~2 ans de données (2x 1 an) sur l'endpoint LunarCrush,
+    en concaténant plusieurs appels (start_date = now, now-1an).
+    Conserve la structure (date, open, close, high, low, volume, market_cap, galaxy_score, alt_rank, sentiment).
     """
-    url = f"https://lunarcrush.com/api4/public/coins/{symbol}/time-series/v2"
-    params = {
-        "key": LUNAR_API_KEY,
-        "bucket": "day",
-        "interval": "1y"
-    }
+    # On va faire 2 segments de 1 an (365 jours), en partant d'aujourd'hui (UTC).
+    # On concatène ensuite les dataFrames résultants.
 
-    try:
-        r = requests.get(url, params=params, timeout=30)
-        logging.info(f"[LUNAR] {symbol} => HTTP {r.status_code}")
+    # Date de fin = now
+    end_date = datetime.utcnow()
 
-        if r.status_code != 200:
-            logging.warning(f"[WARN] {symbol} => code={r.status_code}, skip.")
-            return None
+    # On stocke les DataFrames dans une liste
+    dfs = []
 
-        j = r.json()
-        if "data" not in j or not j["data"]:
-            logging.warning(f"[WARN] {symbol} => data vide => skip.")
-            return None
+    # On boucle 2 fois (pour 2 ans).
+    for _ in range(2):
+        start_date = end_date - timedelta(days=365)
+        # format YYYY-MM-DD
+        start_str = start_date.strftime("%Y-%m-%d")
 
-        rows = []
-        for point in j["data"]:
-            unix_ts = point.get("time")
-            if not unix_ts:
-                continue
+        # Paramètres pour la requête
+        url = f"https://lunarcrush.com/api4/public/coins/{symbol}/time-series/v2"
+        params = {
+            "key": LUNAR_API_KEY,
+            "bucket": "day",
+            "interval": "1y",
+            # On ajoute le paramètre "start" pour spécifier la date de début
+            "start": start_str
+        }
 
-            dt_utc = datetime.utcfromtimestamp(unix_ts)
-            o      = point.get("open", None)
-            c      = point.get("close", None)
-            h      = point.get("high", None)
-            lo     = point.get("low", None)
-            vol_24 = point.get("volume_24h", None)
-            mc     = point.get("market_cap", None)
-            gal    = point.get("galaxy_score", None)
-            alt_   = point.get("alt_rank", None)
-            senti  = point.get("sentiment", None)
+        try:
+            r = requests.get(url, params=params, timeout=30)
+            logging.info(f"[LUNAR 2Y] {symbol} => HTTP {r.status_code} (start={start_str})")
 
-            rows.append([
-                dt_utc, o, c, h, lo, vol_24, mc,
-                gal, alt_, senti
-            ])
+            if r.status_code != 200:
+                logging.warning(f"[WARN] {symbol} => code={r.status_code}, skip segment.")
+            else:
+                j = r.json()
+                if "data" in j and j["data"]:
+                    rows = []
+                    for point in j["data"]:
+                        unix_ts = point.get("time")
+                        if not unix_ts:
+                            continue
+                        dt_utc = datetime.utcfromtimestamp(unix_ts)
+                        o      = point.get("open", None)
+                        c      = point.get("close", None)
+                        h      = point.get("high", None)
+                        lo     = point.get("low", None)
+                        vol_24 = point.get("volume_24h", None)
+                        mc     = point.get("market_cap", None)
+                        gal    = point.get("galaxy_score", None)
+                        alt_   = point.get("alt_rank", None)
+                        senti  = point.get("sentiment", None)
 
-        if not rows:
-            return None
+                        rows.append([
+                            dt_utc, o, c, h, lo, vol_24, mc, gal, alt_, senti
+                        ])
 
-        df = pd.DataFrame(rows, columns=[
-            "date","open","close","high","low","volume","market_cap",
-            "galaxy_score","alt_rank","sentiment"
-        ])
-        df.sort_values("date", inplace=True)
-        df.reset_index(drop=True, inplace=True)
+                    if rows:
+                        df_tmp = pd.DataFrame(rows, columns=[
+                            "date","open","close","high","low","volume","market_cap",
+                            "galaxy_score","alt_rank","sentiment"
+                        ])
+                        dfs.append(df_tmp)
+                else:
+                    logging.warning(f"[WARN] {symbol} => segment data vide => skip.")
+        except Exception as e:
+            logging.error(f"[ERROR] {symbol} => {e}")
 
-        # => plus de filtrage par heure
-        return df
+        # Réduit la end_date pour la prochaine itération (segment précédent)
+        end_date = start_date
 
-    except Exception as e:
-        logging.error(f"[ERROR] {symbol} => {e}")
+    # Si aucun DF n'a été récupéré, on return None
+    if not dfs:
         return None
 
+    # Concat final
+    df_out = pd.concat(dfs, ignore_index=True)
+    df_out.sort_values("date", inplace=True)
+    df_out.drop_duplicates(subset=["date"], keep="first", inplace=True)
+    df_out.reset_index(drop=True, inplace=True)
+    return df_out
+
+########################################
+# FONCTIONS UTILES (IDENTIQUES)
+########################################
 
 def compute_label(df: pd.DataFrame, days=2, threshold=0.05) -> pd.DataFrame:
     """
@@ -443,7 +462,6 @@ def compute_label(df: pd.DataFrame, days=2, threshold=0.05) -> pd.DataFrame:
     df["variation"] = (df["future_close"] - df["close"]) / df["close"]
     df["label"] = (df["variation"] >= threshold).astype(float)
     return df
-
 
 def compute_daily_change(df: pd.DataFrame, col_name: str) -> pd.DataFrame:
     """
@@ -461,35 +479,38 @@ def compute_daily_change(df: pd.DataFrame, col_name: str) -> pd.DataFrame:
     df.drop(columns=["prev_close"], inplace=True)
     return df
 
+########################################
+# MAIN
+########################################
 
 def main():
-    logging.info("=== build_csv => Start (no hour filter, daily changes for BTC/ETH) ===")
+    logging.info("=== build_csv (2 ans) => Start ===")
 
-    # 1) Récup data BTC + daily change
-    df_btc = fetch_lunar_data("BTC")
+    # 1) Récup data BTC (2 ans) + daily change
+    df_btc = fetch_lunar_data_2y("BTC")
     if df_btc is not None and not df_btc.empty:
         df_btc = compute_daily_change(df_btc, "btc_daily_change")
         df_btc = df_btc[["date","btc_daily_change"]]
     else:
         df_btc = pd.DataFrame(columns=["date","btc_daily_change"])
 
-    # 2) Récup data ETH + daily change
-    df_eth = fetch_lunar_data("ETH")
+    # 2) Récup data ETH (2 ans) + daily change
+    df_eth = fetch_lunar_data_2y("ETH")
     if df_eth is not None and not df_eth.empty:
         df_eth = compute_daily_change(df_eth, "eth_daily_change")
         df_eth = df_eth[["date","eth_daily_change"]]
     else:
         df_eth = pd.DataFrame(columns=["date","eth_daily_change"])
-        
-    # 2) Récup data SOL + daily change
-    df_sol = fetch_lunar_data("SOL")
+
+    # 3) Récup data SOL (2 ans) + daily change
+    df_sol = fetch_lunar_data_2y("SOL")
     if df_sol is not None and not df_sol.empty:
         df_sol = compute_daily_change(df_sol, "sol_daily_change")
         df_sol = df_sol[["date","sol_daily_change"]]
     else:
         df_sol = pd.DataFrame(columns=["date","sol_daily_change"])
 
-    # 3) Boucle sur altcoins
+    # 4) Boucle sur altcoins (2 ans)
     from indicators import compute_rsi_macd_atr
 
     all_dfs = []
@@ -498,7 +519,9 @@ def main():
     for i, tk in enumerate(TOKENS, start=1):
         sym = tk["symbol"]
         logging.info(f"[ALT {i}/{nb_tokens}] => {sym}")
-        df_alt = fetch_lunar_data(sym)
+
+        # Récupération 2 ans
+        df_alt = fetch_lunar_data_2y(sym)
         if df_alt is None or df_alt.empty:
             logging.warning(f"[SKIP] {sym} => no data.")
             continue
@@ -544,7 +567,7 @@ def main():
         print(f"[WARN] No data => minimal CSV => {OUTPUT_CSV}")
         return
 
-    # 4) Concat final
+    # 5) Concat final
     df_final = pd.concat(all_dfs, ignore_index=True)
     df_final.sort_values(["symbol","date"], inplace=True)
     df_final.reset_index(drop=True, inplace=True)
@@ -554,12 +577,12 @@ def main():
         if col in df_final.columns:
             df_final.drop(columns=[col], inplace=True)
 
-    # 5) Export CSV
+    # 6) Export CSV
     df_final.to_csv(OUTPUT_CSV, index=False)
     logging.info(f"Export => {OUTPUT_CSV} => {len(df_final)} rows")
     print(f"Export => {OUTPUT_CSV} ({len(df_final)} rows)")
 
-    logging.info("=== DONE build_csv ===")
+    logging.info("=== DONE build_csv (2 ans) ===")
 
 
 if __name__ == "__main__":
