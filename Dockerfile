@@ -7,7 +7,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# => AJOUTER cette ligne
 RUN chmod +x start.sh
 
 CMD ["./start.sh"]
