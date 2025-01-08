@@ -12,7 +12,7 @@ class TradeExecutor:
         asset="BNB" => BNBUSDT
         asset="USDT" => return 1.0
         """
-        if asset.upper()=="USDT":
+        if asset.upper() == "USDT":
             return 1.0
         pair = asset.upper() + "USDT"
         try:
@@ -60,7 +60,7 @@ class TradeExecutor:
         try:
             px_info= self.client.get_symbol_ticker(symbol=pair)
             px= float(px_info["price"])
-            raw_qty= usdt_amount/ px
+            raw_qty= usdt_amount / px
             real_qty= round(raw_qty,5)
             if real_qty<=0:
                 logging.warning(f"[BUY] real_qty<=0 => skip {asset}")
