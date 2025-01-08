@@ -26,7 +26,7 @@ except ImportError:
 def main():
     """
     Boucle principale du bot de trading en mode LIVE.
-    - Chaque jour à 02h00 heure de Paris => daily_update_live(...) => SELL/BUY
+    - Chaque jour à 15h00 heure de Paris => daily_update_live(...) => SELL/BUY
     - Intraday => intraday_check_real(...) => trailing/stop-loss live
     - Stockage local (positions_meta) dans bot_state.json
     """
@@ -69,22 +69,22 @@ def main():
             hour_p = now_paris.hour
             min_p = now_paris.minute
 
-            # => Tâche daily à 02h00 PARIS (2h00 du matin)
+            # => Tâche daily à 15h00 PARIS
             if (
-                hour_p == 2
+                hour_p == 15
                 and min_p == 0
                 and not state.get("did_daily_update_today", False)
             ):
-                logging.info("[MAIN] It's 02h00 in Paris => launching daily_update_live.")
+                logging.info("[MAIN] It's 15h00 in Paris => launching daily_update_live.")
                 daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today flag => True.")
 
-            # Reset du flag si on n'est plus à 02h
-            if hour_p != 2:
+            # Reset du flag si on n'est plus à 15h
+            if hour_p != 15:
                 if state.get("did_daily_update_today", False):
-                    logging.info("[MAIN] hour!=2 => reset did_daily_update_today=False.")
+                    logging.info("[MAIN] hour!=15 => reset did_daily_update_today=False.")
                 state["did_daily_update_today"] = False
                 save_state(state)
 
