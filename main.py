@@ -7,42 +7,26 @@ import datetime
 import yaml
 import os
 import threading
-
-# Gestion du fuseau horaire Europe/Paris
 import pytz
+import subprocess  # <-- Pour exécuter data_fetcher/ml_decision
 
 from modules.trade_executor import TradeExecutor
-#from modules.utils import send_telegram_message
 from modules.positions_store import load_state, save_state
 from modules.risk_manager import intraday_check_real
 
-#try:
-    #from modules.telegram_integration import run_telegram_bot
-#except ImportError:
-    #def run_telegram_bot():
-        #pass
-
+# --- Bot Telegram inactif => commentaires supprimés ---
+# from modules.telegram_integration import run_telegram_bot
+#   => on n'utilise plus
 
 def load_probabilities_csv(csv_path="daily_probabilities.csv"):
-    """
-    Lit un CSV au format:
-        symbol,prob
-        HIVE,0.8321
-        ACT,0.4249
-        ...
-    Retourne un dict { 'HIVE':0.8321, 'ACT':0.4249, ... }.
-    S'il est introuvable ou vide, renvoie {}.
-    """
     import pandas as pd
     if not os.path.exists(csv_path):
         logging.warning(f"[load_probabilities_csv] {csv_path} introuvable => return {{}}")
         return {}
-
     df = pd.read_csv(csv_path)
     if df.empty:
         logging.warning(f"[load_probabilities_csv] {csv_path} est vide => return {{}}")
         return {}
-
     prob_map = {}
     for i, row in df.iterrows():
         sym = str(row["symbol"]).strip()
@@ -50,15 +34,7 @@ def load_probabilities_csv(csv_path="daily_probabilities.csv"):
         prob_map[sym] = p
     return prob_map
 
-
 def main():
-    """
-    Boucle principale du bot de trading en mode LIVE.
-    - Chaque jour à 22h00 heure de Paris => daily_update_live(...) => SELL/BUY
-    - Intraday => intraday_check_real(...) => trailing/stop-loss live
-    - Stockage local (positions_meta) dans bot_state.json
-    """
-
     if not os.path.exists("config.yaml"):
         print("[ERREUR] config.yaml introuvable.")
         return
@@ -66,29 +42,28 @@ def main():
     with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
+    # => Logs en mode append
     logging.basicConfig(
         filename=config["logging"]["file"],  # ex: "bot.log"
+        filemode='a',
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s"
     )
     logging.info("[MAIN] Starting main loop (LIVE).")
 
-    # Lancement du bot Telegram dans un thread séparé (désactivable)
-    t = threading.Thread(target=run_telegram_bot, daemon=True)
-    t.start()
+    # --- Bot Telegram inactif => on ne lance plus run_telegram_bot ---
+    # t = threading.Thread(target=run_telegram_bot, daemon=True)
+    # t.start()
 
-    # Chargement de l'état local
     state = load_state()
     logging.info(f"[MAIN] Loaded state => keys={list(state.keys())}")
 
-    # Initialisation TradeExecutor
     bexec = TradeExecutor(
         api_key=config["binance_api"]["api_key"],
         api_secret=config["binance_api"]["api_secret"]
     )
     logging.info("[MAIN] TradeExecutor initialized.")
 
-    # Fuseau de Paris
     paris_tz = pytz.timezone("Europe/Paris")
 
     while True:
@@ -109,14 +84,14 @@ def main():
                 save_state(state)
                 logging.info("[MAIN] daily_update_today flag => True.")
 
-            # Reset du flag si on n'est plus à 22h
+            # => Reset du flag si on n'est plus à 22h
             if hour_p != 22:
                 if state.get("did_daily_update_today", False):
                     logging.info("[MAIN] hour!=22 => reset did_daily_update_today=False.")
                 state["did_daily_update_today"] = False
                 save_state(state)
 
-            # Intraday check
+            # Intraday check (toutes les X secondes)
             last_check = state.get("last_risk_check_ts", 0)
             elapsed = time.time() - last_check
             if elapsed >= config["strategy"]["check_interval_seconds"]:
@@ -130,24 +105,33 @@ def main():
 
         time.sleep(10)
 
-
 def daily_update_live(state, config, bexec):
     """
-    Achète/Vend en direct => 
-     1) SELL si prob < sell_threshold (sauf skip big_gain_exception_pct).
-     2) BUY top 5 tokens => en utilisant USDT du compte.
-
-    Les probabilités proviennent désormais du fichier daily_probabilities.csv
-    (généré par ml_decision.py), et non plus d'un appel "live" get_probability_for_symbol(...).
+    On recalcule VRAIMENT daily_inference_data.csv + daily_probabilities.csv
+    avant d'acheter ou vendre => rafraîchissement complet.
     """
     logging.info("[DAILY UPDATE] Starting daily_update (live).")
+
+    # 1) Exécuter data_fetcher.py pour récupérer la dernière année LC et produire daily_inference_data.csv
+    try:
+        logging.info("[DAILY UPDATE] Running data_fetcher.py to refresh data.")
+        subprocess.run(["python", "data_fetcher.py"], check=False)
+    except Exception as e:
+        logging.error(f"[DAILY UPDATE] data_fetcher.py => {e}")
+
+    # 2) Exécuter ml_decision.py pour produire daily_probabilities.csv
+    try:
+        logging.info("[DAILY UPDATE] Running ml_decision.py to get new probabilities.")
+        subprocess.run(["python", "ml_decision.py"], check=False)
+    except Exception as e:
+        logging.error(f"[DAILY UPDATE] ml_decision.py => {e}")
+
+    # 3) Charger le CSV des probabilités
+    prob_map = load_probabilities_csv("daily_probabilities.csv")
 
     tokens = config["tokens_daily"]
     strat  = config["strategy"]
     logging.info(f"[DAILY UPDATE] tokens_daily={tokens}")
-
-    # On charge le CSV des probabilités
-    prob_map = load_probabilities_csv("daily_probabilities.csv")
 
     # On récupère le solde complet => On vend si prob < threshold
     try:
@@ -160,7 +144,6 @@ def daily_update_live(state, config, bexec):
     holdings = {}
     usdt_balance = 0.0
 
-    # Récup balance
     for b in balances:
         asset = b["asset"]
         free  = float(b["free"])
@@ -172,13 +155,10 @@ def daily_update_live(state, config, bexec):
             holdings[asset] = qty
     logging.info(f"[DAILY UPDATE] holdings={holdings}, usdt_balance={usdt_balance:.2f}")
 
-    # --------------------
-    # SELL logic
-    # --------------------
+    # ---- SELL logic ----
     for asset, real_qty in holdings.items():
-        prob = prob_map.get(asset, None)  # On lit la prob depuis daily_probabilities.csv
+        prob = prob_map.get(asset, None)
         logging.info(f"[DAILY SELL CHECK] {asset}, prob={prob}")
-
         if prob is None:
             logging.info(f"[DAILY SELL] {asset} => prob=None => skip.")
             continue
@@ -191,6 +171,7 @@ def daily_update_live(state, config, bexec):
             current_px = bexec.get_symbol_price(asset)
             if entry_px and entry_px > 0:
                 ratio = current_px / entry_px
+                # big_gain_exception_pct => ex: 4.0 = +300%
                 if ratio >= strat["big_gain_exception_pct"] and not did_skip:
                     meta["did_skip_sell_once"] = True
                     state["positions_meta"][asset] = meta
@@ -203,9 +184,7 @@ def daily_update_live(state, config, bexec):
                 del state["positions_meta"][asset]
             save_state(state)
 
-    # --------------------
-    # BUY logic => top 5
-    # --------------------
+    # ---- BUY logic => top 5 ----
     buy_candidates = []
     for sym in tokens:
         if sym in holdings:
