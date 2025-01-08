@@ -9,6 +9,9 @@ en mode responsive (Bootstrap), et concatène TOUS vos logs :
  - data_fetcher.log
  - ml_decision.log
 dans l'onglet "Logs".
+
+# === AJOUT BOUTON FORCE DAILY UPDATE ===
+ => On ajoute un bouton "Forcer Daily Update" qui appelle la route Flask "/force_daily_update/<pwd>".
 """
 
 import os
@@ -32,41 +35,27 @@ except ImportError as e:
 # 1) Lecture + concaténation de TOUS les logs
 ########################
 
-# Liste des logs à concaténer
 ALL_LOG_FILES = [
     "bot.log",
     "data_fetcher.log",
     "ml_decision.log"
-    # vous pouvez en ajouter d'autres si besoin
 ]
 
 def tail_all_logs(num_lines=200):
-    """
-    Lit chaque fichier de ALL_LOG_FILES (s'il existe),
-    prend les 200 dernières lignes (par défaut),
-    et les concatène en préfixant le nom du fichier
-    pour qu'on sache d'où vient la ligne.
-    """
     combined_lines = []
     for logf in ALL_LOG_FILES:
         if os.path.exists(logf):
             try:
                 with open(logf, "r") as f:
                     lines = f.readlines()
-                # On prend les dernières `num_lines` lignes
                 lines = lines[-num_lines:]
-                # On ajoute un préfixe pour repérer le fichier
                 combined_lines.append(f"\n=== [ {logf} ] ===\n")
                 for line in lines:
-                    # Optionnel: on peut laisser la ligne telle quelle
-                    # ou faire: combined_lines.append(f"[{logf}] {line}")
                     combined_lines.append(line)
             except Exception as e:
                 combined_lines.append(f"\n[LOG ERROR] Impossible de lire {logf} => {e}\n")
         else:
             combined_lines.append(f"\n[{logf}] n'existe pas.\n")
-
-    # On fusionne le tout
     return "".join(combined_lines)
 
 ########################
@@ -85,9 +74,9 @@ def get_model_version_date():
 # 3) Flask app
 ########################
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)  # logs en console conteneur
+logging.basicConfig(level=logging.INFO)
 
-SECRET_PWD = "SECRET123"  # à personnaliser
+SECRET_PWD = "SECRET123"
 
 TEMPLATE_HTML = r"""
 <!DOCTYPE html>
@@ -179,6 +168,15 @@ TEMPLATE_HTML = r"""
 
     <h4>Date du model.pkl</h4>
     <p>{{ model_date }}</p>
+
+    <!-- === AJOUT BOUTON FORCE DAILY UPDATE === -->
+    <hr/>
+    <h4>Forcer le Daily Update</h4>
+    <p>
+      <button class="btn btn-warning" onclick="forceDailyUpdate()">Forcer le daily update</button>
+    </p>
+    <p id="forceDailyResult" style="color:blue;"></p>
+
   </div>
 
   <!-- Perf Tab -->
@@ -281,6 +279,21 @@ function refreshLogs(){
    });
 }
 setInterval(refreshLogs, 3000);
+
+// === AJOUT BOUTON FORCE DAILY UPDATE ===
+function forceDailyUpdate(){
+  if(confirm("Forcer le daily update ?")) {
+    fetch("{{ url_for('force_daily_update', pwd=secret_pwd) }}", {method:'POST'})
+    .then(r=>r.json())
+    .then(j=>{
+      document.getElementById("forceDailyResult").innerText = j.message;
+    })
+    .catch(e=>{
+      document.getElementById("forceDailyResult").innerText="Erreur: "+e;
+    });
+  }
+}
+
 </script>
 </body>
 </html>
@@ -315,6 +328,27 @@ def emergency_api(pwd):
         return jsonify({"message":"Forbidden"}), 403
     emergency_out()
     return jsonify({"message":"Emergency Out déclenché."})
+
+# === AJOUT BOUTON FORCE DAILY UPDATE ===
+@app.route(f"/force_daily_update/<pwd>", methods=["POST"])
+def force_daily_update(pwd):
+    if pwd != SECRET_PWD:
+        return jsonify({"message":"Forbidden"}), 403
+    # On appelle la fonction daily_update_live (depuis main)
+    # => Il faut l'importer ou la dupliquer. On va faire un import tardif :
+    from main import load_state, save_state, daily_update_live
+    import yaml
+
+    with open("config.yaml","r") as f:
+        config = yaml.safe_load(f)
+
+    state = load_state()
+    bexec = TradeExecutor(
+        api_key=config["binance_api"]["api_key"],
+        api_secret=config["binance_api"]["api_secret"]
+    )
+    daily_update_live(state, config, bexec)
+    return jsonify({"message":"Daily Update déclenché manuellement."})
 
 @app.route(f"/logs/<pwd>", methods=["GET"])
 def get_logs(pwd):
