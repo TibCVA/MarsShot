@@ -23,7 +23,7 @@ def intraday_check_real(state, bexec, config):
         free= float(b["free"])
         locked= float(b["locked"])
         qty= free+ locked
-        if qty>0 and asset!="USDT":
+        if qty>0 and asset.upper()!="USDT":
             holdings[asset]= qty
 
     logging.info(f"[INTRADAY] holdings={holdings}")
@@ -32,7 +32,7 @@ def intraday_check_real(state, bexec, config):
         current_px = bexec.get_symbol_price(asset)
         meta = state["positions_meta"].get(asset,{})
         entry_px= meta.get("entry_px", current_px)
-        ratio= current_px/ entry_px if entry_px>0 else 1.0
+        ratio= (current_px / entry_px) if entry_px>0 else 1.0
 
         logging.info(f"[INTRADAY] {asset} => ratio={ratio:.3f}, entry_px={entry_px:.4f}, current_px={current_px:.4f}")
 
@@ -48,7 +48,7 @@ def intraday_check_real(state, bexec, config):
 
         # PARTIAL => if ratio>= (1+ partial_take_profit_pct) & not partial_sold
         if ratio >= (1 + strat["partial_take_profit_pct"]) and not meta.get("partial_sold",False):
-            qty_to_sell= real_qty* strat["partial_take_profit_ratio"]
+            qty_to_sell= real_qty * strat["partial_take_profit_ratio"]
             partial_val= bexec.sell_partial(asset, qty_to_sell)
             meta["partial_sold"]= True
             logging.info(f"[INTRADAY PARTIAL SELL] {asset}, ratio={ratio:.2f}, partial_val={partial_val:.2f}")
