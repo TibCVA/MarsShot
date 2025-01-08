@@ -12,16 +12,44 @@ import threading
 import pytz
 
 from modules.trade_executor import TradeExecutor
-from modules.utils import send_telegram_message
-from modules.ml_decision import get_probability_for_symbol
+#from modules.utils import send_telegram_message
 from modules.positions_store import load_state, save_state
 from modules.risk_manager import intraday_check_real
 
-try:
-    from modules.telegram_integration import run_telegram_bot
-except ImportError:
-    def run_telegram_bot():
-        pass
+#try:
+    #from modules.telegram_integration import run_telegram_bot
+#except ImportError:
+    #def run_telegram_bot():
+        #pass
+
+
+def load_probabilities_csv(csv_path="daily_probabilities.csv"):
+    """
+    Lit un CSV au format:
+        symbol,prob
+        HIVE,0.8321
+        ACT,0.4249
+        ...
+    Retourne un dict { 'HIVE':0.8321, 'ACT':0.4249, ... }.
+    S'il est introuvable ou vide, renvoie {}.
+    """
+    import pandas as pd
+    if not os.path.exists(csv_path):
+        logging.warning(f"[load_probabilities_csv] {csv_path} introuvable => return {}")
+        return {}
+
+    df = pd.read_csv(csv_path)
+    if df.empty:
+        logging.warning(f"[load_probabilities_csv] {csv_path} est vide => return {}")
+        return {}
+
+    prob_map = {}
+    for i, row in df.iterrows():
+        sym = str(row["symbol"]).strip()
+        p   = float(row["prob"])
+        prob_map[sym] = p
+    return prob_map
+
 
 def main():
     """
@@ -45,7 +73,7 @@ def main():
     )
     logging.info("[MAIN] Starting main loop (LIVE).")
 
-    # Lancement du bot Telegram dans un thread séparé
+    # Lancement du bot Telegram dans un thread séparé (désactivable)
     t = threading.Thread(target=run_telegram_bot, daemon=True)
     t.start()
 
@@ -67,7 +95,7 @@ def main():
         try:
             now_paris = datetime.datetime.now(paris_tz)
             hour_p = now_paris.hour
-            min_p = now_paris.minute
+            min_p  = now_paris.minute
 
             # => Tâche daily à 16h10 PARIS
             if (
@@ -108,12 +136,18 @@ def daily_update_live(state, config, bexec):
     Achète/Vend en direct => 
      1) SELL si prob < sell_threshold (sauf skip big_gain_exception_pct).
      2) BUY top 5 tokens => en utilisant USDT du compte.
+
+    Les probabilités proviennent désormais du fichier daily_probabilities.csv
+    (généré par ml_decision.py), et non plus d'un appel "live" get_probability_for_symbol(...).
     """
     logging.info("[DAILY UPDATE] Starting daily_update (live).")
 
     tokens = config["tokens_daily"]
     strat  = config["strategy"]
     logging.info(f"[DAILY UPDATE] tokens_daily={tokens}")
+
+    # On charge le CSV des probabilités
+    prob_map = load_probabilities_csv("daily_probabilities.csv")
 
     # On récupère le solde complet => On vend si prob < threshold
     try:
@@ -138,13 +172,17 @@ def daily_update_live(state, config, bexec):
             holdings[asset] = qty
     logging.info(f"[DAILY UPDATE] holdings={holdings}, usdt_balance={usdt_balance:.2f}")
 
+    # --------------------
     # SELL logic
+    # --------------------
     for asset, real_qty in holdings.items():
-        prob = get_probability_for_symbol(asset)  # ml_decision => live
+        prob = prob_map.get(asset, None)  # On lit la prob depuis daily_probabilities.csv
         logging.info(f"[DAILY SELL CHECK] {asset}, prob={prob}")
+
         if prob is None:
             logging.info(f"[DAILY SELL] {asset} => prob=None => skip.")
             continue
+
         if prob < strat["sell_threshold"]:
             meta = state["positions_meta"].get(asset, {})
             did_skip = meta.get("did_skip_sell_once", False)
@@ -165,14 +203,16 @@ def daily_update_live(state, config, bexec):
                 del state["positions_meta"][asset]
             save_state(state)
 
-    # BUY => top 5
+    # --------------------
+    # BUY logic => top 5
+    # --------------------
     buy_candidates = []
     for sym in tokens:
         if sym in holdings:
             continue
-        pr = get_probability_for_symbol(sym)
+        pr = prob_map.get(sym, None)
         logging.info(f"[DAILY BUY CHECK] {sym}, prob={pr}")
-        if pr and pr >= strat["buy_threshold"]:
+        if pr is not None and pr >= strat["buy_threshold"]:
             buy_candidates.append((sym, pr))
 
     buy_candidates.sort(key=lambda x: x[1], reverse=True)
