@@ -69,7 +69,7 @@ def main():
             hour_p = now_paris.hour
             min_p = now_paris.minute
 
-            # => Tâche daily à 02h00 PARIS
+            # => Tâche daily à 02h00 PARIS (2h00 du matin)
             if (
                 hour_p == 2
                 and min_p == 0
