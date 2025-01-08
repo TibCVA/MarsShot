@@ -35,12 +35,12 @@ def load_probabilities_csv(csv_path="daily_probabilities.csv"):
     """
     import pandas as pd
     if not os.path.exists(csv_path):
-        logging.warning(f"[load_probabilities_csv] {csv_path} introuvable => return {}")
+        logging.warning(f"[load_probabilities_csv] {csv_path} introuvable => return {{}}")
         return {}
 
     df = pd.read_csv(csv_path)
     if df.empty:
-        logging.warning(f"[load_probabilities_csv] {csv_path} est vide => return {}")
+        logging.warning(f"[load_probabilities_csv] {csv_path} est vide => return {{}}")
         return {}
 
     prob_map = {}
