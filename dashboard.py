@@ -286,10 +286,10 @@ function forceDailyUpdate(){
     fetch("{{ url_for('force_daily_update', pwd=secret_pwd) }}", {method:'POST'})
     .then(r=>r.json())
     .then(j=>{
-      document.getElementById("forceDailyResult").innerText = j.message;
+      alert("Réponse daily update: " + j.message);
     })
     .catch(e=>{
-      document.getElementById("forceDailyResult").innerText="Erreur: "+e;
+      alert("Erreur daily update: " + e);
     });
   }
 }
