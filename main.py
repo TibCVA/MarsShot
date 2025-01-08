@@ -54,7 +54,7 @@ def load_probabilities_csv(csv_path="daily_probabilities.csv"):
 def main():
     """
     Boucle principale du bot de trading en mode LIVE.
-    - Chaque jour à 16h10 heure de Paris => daily_update_live(...) => SELL/BUY
+    - Chaque jour à 22h00 heure de Paris => daily_update_live(...) => SELL/BUY
     - Intraday => intraday_check_real(...) => trailing/stop-loss live
     - Stockage local (positions_meta) dans bot_state.json
     """
@@ -97,22 +97,22 @@ def main():
             hour_p = now_paris.hour
             min_p  = now_paris.minute
 
-            # => Tâche daily à 16h10 PARIS
+            # => Tâche daily à 22h00 PARIS
             if (
-                hour_p == 16
-                and min_p == 10
+                hour_p == 22
+                and min_p == 0
                 and not state.get("did_daily_update_today", False)
             ):
-                logging.info("[MAIN] It's 16h10 in Paris => launching daily_update_live.")
+                logging.info("[MAIN] It's 22h00 in Paris => launching daily_update_live.")
                 daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today flag => True.")
 
-            # Reset du flag si on n'est plus à 16h
-            if hour_p != 16:
+            # Reset du flag si on n'est plus à 22h
+            if hour_p != 22:
                 if state.get("did_daily_update_today", False):
-                    logging.info("[MAIN] hour!=16 => reset did_daily_update_today=False.")
+                    logging.info("[MAIN] hour!=22 => reset did_daily_update_today=False.")
                 state["did_daily_update_today"] = False
                 save_state(state)
 
