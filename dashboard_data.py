@@ -20,9 +20,6 @@ BINANCE_SECRET = CONFIG["binance_api"]["api_secret"]
 logging.basicConfig(level=logging.INFO)
 
 def get_portfolio_state():
-    """
-    Lit solde SPOT sur Binance => renvoie un dict positions[], total_value_usdt
-    """
     bexec = TradeExecutor(BINANCE_KEY, BINANCE_SECRET)
     client= bexec.client
     info= client.get_account()
@@ -75,14 +72,9 @@ def get_performance_history():
     }
 
 def get_trades_history():
-    # On pourrait recup client.get_my_trades()...
-    # Pour l'instant, on renvoie []
     return []
 
 def emergency_out():
-    """
-    On vend tout sauf USDT
-    """
     bexec= TradeExecutor(BINANCE_KEY,BINANCE_SECRET)
     info= bexec.client.get_account()
     for b in info["balances"]:
