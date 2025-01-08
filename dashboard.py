@@ -3,25 +3,20 @@
 
 """
 Mini-dashboard Flask pour MarsShot.
-Affiche plusieurs onglets (Positions, Perf, Tokens, Trades, Emergency, Logs)
-en mode responsive (Bootstrap), et concatène TOUS vos logs :
- - bot.log
- - data_fetcher.log
- - ml_decision.log
-dans l'onglet "Logs".
-
-# === AJOUT BOUTON FORCE DAILY UPDATE ===
- => On ajoute un bouton "Forcer Daily Update" qui appelle la route Flask "/force_daily_update/<pwd>".
+Affiche plusieurs onglets, concatène les logs.
++ Bouton "Forcer daily update" => exécute data_fetcher + ml_decision + daily_update.
 """
 
 import os
 import datetime
 import logging
+import subprocess  # <-- Pour exécuter data_fetcher/ml_decision
 from flask import Flask, request, jsonify, render_template_string
 
-# === On importe les fonctions REELLES (sans fallback) ===
+# === On n'utilise plus telegram_integration ici ===
+# Remplacement par dashboard_data
 try:
-    from modules.telegram_integration import (
+    from dashboard_data import (
         get_portfolio_state,
         list_tokens_tracked,
         get_performance_history,
@@ -29,10 +24,10 @@ try:
         emergency_out
     )
 except ImportError as e:
-    raise ImportError(f"[ERREUR] Impossible d'importer telegram_integration: {e}")
+    raise ImportError(f"[ERREUR] Impossible d'importer dashboard_data: {e}")
 
 ########################
-# 1) Lecture + concaténation de TOUS les logs
+# Logs
 ########################
 
 ALL_LOG_FILES = [
@@ -58,9 +53,6 @@ def tail_all_logs(num_lines=200):
             combined_lines.append(f"\n[{logf}] n'existe pas.\n")
     return "".join(combined_lines)
 
-########################
-# 2) Model info
-########################
 def get_model_version_date():
     fname = "model.pkl"
     if os.path.exists(fname):
@@ -70,9 +62,6 @@ def get_model_version_date():
     else:
         return "model.pkl introuvable"
 
-########################
-# 3) Flask app
-########################
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -84,7 +73,6 @@ TEMPLATE_HTML = r"""
 <head>
   <meta charset="utf-8">
   <title>MarsShot Dashboard</title>
-  <!-- Responsive meta + Bootstrap CSS -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link 
     rel="stylesheet" 
@@ -169,7 +157,7 @@ TEMPLATE_HTML = r"""
     <h4>Date du model.pkl</h4>
     <p>{{ model_date }}</p>
 
-    <!-- === AJOUT BOUTON FORCE DAILY UPDATE === -->
+    <!-- Bouton FORCER DAILY UPDATE -->
     <hr/>
     <h4>Forcer le Daily Update</h4>
     <p>
@@ -253,7 +241,7 @@ TEMPLATE_HTML = r"""
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-// Appel Ajax pour "Emergency"
+// Emergency
 function triggerEmergency(){
   if(confirm("Confirmer l'Emergency Out ?")) {
     fetch("{{ url_for('emergency_api', pwd=secret_pwd) }}", {method:'POST'})
@@ -267,7 +255,7 @@ function triggerEmergency(){
   }
 }
 
-// Rafraichir logs toutes les 3s
+// Logs
 function refreshLogs(){
   fetch("{{ url_for('get_logs', pwd=secret_pwd) }}")
    .then(r=>r.text())
@@ -280,7 +268,7 @@ function refreshLogs(){
 }
 setInterval(refreshLogs, 3000);
 
-// === AJOUT BOUTON FORCE DAILY UPDATE ===
+// Forcer daily
 function forceDailyUpdate(){
   if(confirm("Forcer le daily update ?")) {
     fetch("{{ url_for('force_daily_update', pwd=secret_pwd) }}", {method:'POST'})
@@ -293,7 +281,6 @@ function forceDailyUpdate(){
     });
   }
 }
-
 </script>
 </body>
 </html>
@@ -329,13 +316,26 @@ def emergency_api(pwd):
     emergency_out()
     return jsonify({"message":"Emergency Out déclenché."})
 
-# === AJOUT BOUTON FORCE DAILY UPDATE ===
 @app.route(f"/force_daily_update/<pwd>", methods=["POST"])
 def force_daily_update(pwd):
     if pwd != SECRET_PWD:
         return jsonify({"message":"Forbidden"}), 403
-    # On appelle la fonction daily_update_live (depuis main)
-    # => Il faut l'importer ou la dupliquer. On va faire un import tardif :
+
+    # 1) data_fetcher => pour actualiser daily_inference_data.csv
+    try:
+        logging.info("[FORCE DAILY] Running data_fetcher.py")
+        subprocess.run(["python", "data_fetcher.py"], check=False)
+    except Exception as e:
+        logging.error(f"[FORCE DAILY] data_fetcher => {e}")
+
+    # 2) ml_decision => daily_probabilities.csv
+    try:
+        logging.info("[FORCE DAILY] Running ml_decision.py")
+        subprocess.run(["python", "ml_decision.py"], check=False)
+    except Exception as e:
+        logging.error(f"[FORCE DAILY] ml_decision => {e}")
+
+    # 3) Appeler daily_update_live(...) pour BUY/SELL
     from main import load_state, save_state, daily_update_live
     import yaml
 
@@ -343,10 +343,17 @@ def force_daily_update(pwd):
         config = yaml.safe_load(f)
 
     state = load_state()
-    bexec = TradeExecutor(
-        api_key=config["binance_api"]["api_key"],
-        api_secret=config["binance_api"]["api_secret"]
-    )
+    bexec = None
+    try:
+        from modules.trade_executor import TradeExecutor
+        bexec = TradeExecutor(
+            api_key=config["binance_api"]["api_key"],
+            api_secret=config["binance_api"]["api_secret"]
+        )
+    except Exception as e:
+        logging.error(f"[FORCE DAILY] TradeExecutor => {e}")
+        return jsonify({"message":"TradeExecutor init error."}), 500
+
     daily_update_live(state, config, bexec)
     return jsonify({"message":"Daily Update déclenché manuellement."})
 
