@@ -107,13 +107,13 @@ def main():
 
     # Grille de recherche hyperparamètres
     param_dist = {
-        "clf__n_estimators":      [100, 200, 300, 500],
-        "clf__max_depth":         [10, 15, 20, None],
-        "clf__min_samples_split": [2, 5, 10],
-        "clf__min_samples_leaf":  [1, 2, 5],
+       "clf__n_estimators":      [100, 200, 300, 500, 800, 1200],
+        "clf__max_depth":         [10, 15, 20, 30, None],
+        "clf__min_samples_split": [2, 5, 10, 20],
+        "clf__min_samples_leaf":  [1, 2, 5, 10],
         "clf__max_features":      ["sqrt", "log2", None],
         "clf__bootstrap":         [True, False],
-        "clf__class_weight":      [None, "balanced_subsample", {0:1,1:2}, {0:1,1:3}]
+        "clf__class_weight":      [None, "balanced_subsample", {0:1,1:2}, {0:1,1:3}, {0:1,1:4}]
     }
 
     tscv = TimeSeriesSplit(n_splits=TSCV_SPLITS)
