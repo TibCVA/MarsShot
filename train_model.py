@@ -32,7 +32,7 @@ CSV_FILE   = "training_data.csv"
 MODEL_FILE = "model.pkl"
 
 FINAL_TEST_RATIO = 0.1
-N_ITER          = 50    # Paramètre pour la RandomizedSearch
+N_ITER          = 60    # Paramètre pour la RandomizedSearch
 TSCV_SPLITS     = 15    # Nombre de splits en TimeSeriesSplit
 
 logging.basicConfig(
@@ -107,13 +107,13 @@ def main():
 
     # Grille de recherche hyperparamètres
     param_dist = {
-       "clf__n_estimators":      [100, 200, 300, 500, 800, 1200],
-        "clf__max_depth":         [10, 15, 20, 30, None],
-        "clf__min_samples_split": [2, 5, 10, 20],
-        "clf__min_samples_leaf":  [1, 2, 5, 10],
-        "clf__max_features":      ["sqrt", "log2", None],
+       "clf__n_estimators":      [100, 300, 500, 800],
+        "clf__max_depth":         [10, 15, 20, 30],
+        "clf__min_samples_split": [2, 5, 10],
+        "clf__min_samples_leaf":  [1, 2, 5],
+        "clf__max_features":      ["sqrt", "log2"],
         "clf__bootstrap":         [True, False],
-        "clf__class_weight":      [None, "balanced_subsample", {0:1,1:2}, {0:1,1:3}, {0:1,1:4}]
+        "clf__class_weight":      [None, "balanced_subsample", {0:1,1:2}, {0:1,1:3}]
     }
 
     tscv = TimeSeriesSplit(n_splits=TSCV_SPLITS)
