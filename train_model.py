@@ -4,9 +4,11 @@
 """
 train_model.py
 Inclut désormais 'sol_daily_change' dans les features, en plus de BTC et ETH.
+Ajout de logs détaillés pour suivre la progression dans tmux.
 """
 
 import os
+import sys
 import logging
 import pandas as pd
 import numpy as np
@@ -35,47 +37,61 @@ FINAL_TEST_RATIO = 0.1
 N_ITER          = 60    # Paramètre pour la RandomizedSearch
 TSCV_SPLITS     = 15    # Nombre de splits en TimeSeriesSplit
 
+# =========================
+# Logging Configuration
+# =========================
+# On écrit dans train_model.log ET on affiche en console (pour tmux).
 logging.basicConfig(
     filename=LOG_FILE,
+    filemode='a',       # append mode => on ne ré-écrase pas
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
+
+# Ajout d'un StreamHandler pour voir logs dans la console en direct
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.INFO)
+logging.getLogger().addHandler(console_handler)
+
 logging.info("=== START train_model ===")
 
 def main():
     if not os.path.exists(CSV_FILE):
+        logging.error("[ERREUR] CSV introuvable.")
         print("[ERREUR] CSV introuvable.")
         return
 
     df = pd.read_csv(CSV_FILE)
     if "label" not in df.columns:
+        logging.error("[ERREUR] label manquant dans training_data.csv.")
         print("[ERREUR] label manquant.")
         return
 
-    # Ajout de 'sol_daily_change' dans la liste des features
+    # Ajout de 'sol_daily_change' dans les features
     features = [
         "close", "volume", "market_cap",
         "galaxy_score", "alt_rank", "sentiment",
         "rsi", "macd", "atr",
         "btc_daily_change", "eth_daily_change",
-        "sol_daily_change"  # <-- NOUVEAU
+        "sol_daily_change"
     ]
 
     missing = [c for c in features if c not in df.columns]
     if missing:
+        logging.error(f"[ERREUR] Colonnes manquantes: {missing}")
         print("[ERREUR] Missing columns:", missing)
         return
 
     # On retire toutes les lignes où l'une des features ou 'label' est NaN
     sub = df.dropna(subset=features + ["label"]).copy()
-    sub.sort_values("date", inplace=True)  # S'assurer du tri chronologique
+    sub.sort_values("date", inplace=True)  # tri chronologique
 
     # Découpe en train/val vs. final_test
     cutoff = int((1.0 - FINAL_TEST_RATIO) * len(sub))
     train_val_df = sub.iloc[:cutoff].copy()
     final_test_df = sub.iloc[cutoff:].copy()
 
-    logging.info(f"Train_val => {len(train_val_df)}, Final_test => {len(final_test_df)}.")
+    logging.info(f"Train_val => {len(train_val_df)} lignes, Final_test => {len(final_test_df)} lignes.")
 
     X_tv = train_val_df[features]
     y_tv = train_val_df["label"].astype(int)
@@ -118,20 +134,24 @@ def main():
 
     tscv = TimeSeriesSplit(n_splits=TSCV_SPLITS)
 
+    # Paramètre verbose=3 => affiche la progression fold par fold
     search = RandomizedSearchCV(
         estimator=pipe,
         param_distributions=param_dist,
         n_iter=N_ITER,
-        scoring="f1",  # f1 pour classification binaire (pos_label=1)
+        scoring="f1",
         cv=tscv,
-        verbose=1,
+        verbose=3,      # <-- plus verbeux => progression visible dans la console
         random_state=42,
         n_jobs=-1
     )
 
     logging.info(f"RandomizedSearch => scoring='f1', TSCV={TSCV_SPLITS}, n_iter={N_ITER}")
+    logging.info("Démarrage de search.fit(...) : cela peut prendre un moment.")
+
     search.fit(X_tv, y_tv)
 
+    logging.info("search.fit(...) terminé.")
     best_params = search.best_params_
     logging.info(f"Best Params => {best_params}")
     print("\n[RESULT] Hyperparams =>", best_params)
@@ -146,6 +166,7 @@ def main():
     logging.info("\n[Hold-out final test]\n" + rep_test)
 
     # Re-fit sur tout train+val
+    logging.info("Re-fit final_model sur l'intégralité train+val...")
     final_model.fit(X_tv, y_tv)
     y_pred_in = final_model.predict(X_tv)
     rep_in = classification_report(y_tv, y_pred_in, digits=3)
