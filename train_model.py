@@ -48,7 +48,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
-# Ajout d'un StreamHandler pour voir logs dans la console en direct
+# Ajout d'un StreamHandler pour voir les logs en direct dans la console (tmux)
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(logging.INFO)
 logging.getLogger().addHandler(console_handler)
