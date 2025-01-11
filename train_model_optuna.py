@@ -5,6 +5,9 @@
 train_model_optuna.py
 Entraîne un modèle LightGBM optimisé via Optuna,
 pour prédire si un token fera +5% sur 2 jours (label=1 vs label=0).
+
+Corrigé : On utilise imblearn.pipeline.Pipeline au lieu de sklearn.pipeline.Pipeline
+afin de permettre SMOTE en milieu de pipeline.
 """
 
 import os
@@ -19,9 +22,8 @@ from optuna.samplers import TPESampler
 import lightgbm as lgb
 
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import f1_score, classification_report
+from sklearn.preprocessing import StandardScaler
 
 try:
     from imblearn.over_sampling import SMOTE
@@ -29,6 +31,9 @@ try:
 except ImportError:
     IMBLEARN_OK = False
     print("[WARNING] imblearn (SMOTE) non installé => fallback")
+
+# CHANGEMENT ICI:
+from imblearn.pipeline import Pipeline  # <-- On importe la pipeline d'imblearn
 
 CSV_FILE       = "training_data.csv"
 MODEL_FILE     = "model.pkl"
@@ -122,10 +127,11 @@ def objective(trial):
 
     steps = []
     if USE_SMOTE and IMBLEARN_OK:
-        steps.append(("smote", SMOTE(random_state=42)))
-    steps.append(("scaler", StandardScaler()))
-    steps.append(("lgb", lgb_clf))
+        steps.append(("smote", SMOTE(random_state=42)))  # sampler
+    steps.append(("scaler", StandardScaler()))           # transformer
+    steps.append(("lgb", lgb_clf))                       # final estimator
 
+    # On utilise la pipeline d'imblearn
     pipe = Pipeline(steps)
 
     tscv = TimeSeriesSplit(n_splits=TSCV_SPLITS)
@@ -202,4 +208,3 @@ logging.info(f"[SAVE] => {MODEL_FILE}")
 print(f"[OK] Modèle final sauvegardé => {MODEL_FILE}")
 
 logging.info("=== DONE train_model_optuna (LightGBM) ===")
-
