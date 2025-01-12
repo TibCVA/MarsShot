@@ -36,6 +36,11 @@ exchanges:
       "REI": "REI"
       "LUNA": "LUNA"
       "ALICE": "ALICE"
+      "QKC": "QKC"
+      "IOST": "IOST"
+      "HIFI": "HIFI"
+      "GLM": "GLM"
+      "CGPT": "CGPT"
       # Si besoin, ajoute d'autres mappings => "MYTOKEN_LC": "MYTOKEN_BNB"
 
 binance_api:
@@ -67,6 +72,11 @@ tokens_daily:
   - "REI"
   - "LUNA"
   - "ALICE"
+  - "QKC"
+  - "IOST"
+  - "HIFI"
+  - "GLM"
+  - "CGPT"
 strategy:
   capital_initial: 821.0
   buy_threshold: 0.7
