@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# coding: utf-8
+# -*- coding: utf-8 -*-
 
 import requests
 import pandas as pd
@@ -10,18 +10,17 @@ from datetime import datetime, timedelta
 from typing import Optional
 import numpy as np
 
-from indicators import compute_indicators
+from indicators import compute_indicators_extended
 
 ########################################
 # CONFIG
 ########################################
 
 LUNAR_API_KEY = "85zhfo9yl9co22cl7kw2sucossm59awchvwf8s8ub"
-SHIFT_DAYS = 2      # Label => +5% sur 2 jours
-THRESHOLD = 0.05    # +5%
+SHIFT_DAYS = 2         # Label => +5% sur 2 jours
+THRESHOLD = 0.05       # +5%
 OUTPUT_CSV = "training_data.csv"
 LOG_FILE   = "build_csv.log"
-
 SLEEP_BETWEEN_TOKENS = 12
 
 logging.basicConfig(
@@ -33,16 +32,14 @@ logging.basicConfig(
 logging.info("=== START build_csv ===")
 
 ########################################
-# TOKENS (321)
+# LISTE TOKENS
 ########################################
 
 TOKENS = [
   {"symbol": "BTG"},
-  {"symbol": "TRUMP"},
   {"symbol": "SBD"},
   {"symbol": "NCT"},
   {"symbol": "HIVE"},
-  {"symbol": "PAAL"},
   {"symbol": "PRIME"},
   {"symbol": "STG"},
   {"symbol": "NOS"},
@@ -50,11 +47,9 @@ TOKENS = [
   {"symbol": "SFUND"},
   {"symbol": "CETUS"},
   {"symbol": "MAGIC"},
-  {"symbol": "MCADE"},
   {"symbol": "ALU"},
   {"symbol": "CTXC"},
   {"symbol": "AI"},
-  {"symbol": "BITCOIN"},
   {"symbol": "BLUE"},
   {"symbol": "SUSHI"},
   {"symbol": "DAR"},
@@ -69,7 +64,6 @@ TOKENS = [
   {"symbol": "KAVA"},
   {"symbol": "WAVES"},
   {"symbol": "LUNA"},
-  {"symbol": "TEL"},
   {"symbol": "VANRY"},
   {"symbol": "WOO"},
   {"symbol": "NFP"},
@@ -356,10 +350,14 @@ TOKENS = [
 ]
 
 ########################################
-# fetch_lunar_data_2y
+# fetch_lunar_data_2y AVEC RETRY
 ########################################
 
 def fetch_lunar_data_2y(symbol: str) -> Optional[pd.DataFrame]:
+    """
+    Récupère 2 ans de données journalières via LunarCrush.
+    Gère les codes 429, 502, 530 avec retry exponentiel.
+    """
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=730)
     start_ts = int(start_date.timestamp())
@@ -372,53 +370,69 @@ def fetch_lunar_data_2y(symbol: str) -> Optional[pd.DataFrame]:
         "start": start_ts,
         "end":   end_ts
     }
-    max_retries = 2
-    attempt = 0
+    max_retries = 3
     df_out = None
 
-    while attempt < max_retries:
-        attempt += 1
+    for attempt in range(max_retries):
         try:
             r = requests.get(url, params=params, timeout=30)
-            logging.info(f"[LUNAR] {symbol} => HTTP {r.status_code}")
-            if r.status_code == 200:
+            code = r.status_code
+            logging.info(f"[LUNAR] {symbol} => HTTP {code} (attempt {attempt+1}/{max_retries})")
+
+            if code == 200:
                 j = r.json()
                 data_pts = j.get("data", [])
                 if data_pts:
                     rows = []
                     for pt in data_pts:
-                        ts_ = pt.get("time")
-                        if not ts_:
+                        unix_ts = pt.get("time")
+                        if not unix_ts:
                             continue
-                        dt_utc = datetime.utcfromtimestamp(ts_)
-                        o   = pt.get("open", None)
-                        c   = pt.get("close", None)
-                        h   = pt.get("high", None)
-                        lo  = pt.get("low", None)
-                        vol = pt.get("volume_24h", None)
-                        mc  = pt.get("market_cap", None)
-                        gal = pt.get("galaxy_score", None)
-                        alt_ = pt.get("alt_rank", None)
-                        senti = pt.get("sentiment", None)
+                        dt_utc = datetime.utcfromtimestamp(unix_ts)
+
+                        o   = pt.get("open", 0)
+                        c   = pt.get("close", 0)
+                        h   = pt.get("high", 0)
+                        lo  = pt.get("low", 0)
+                        vol = pt.get("volume_24h", 0)
+                        mc  = pt.get("market_cap", 0)
+                        gal = pt.get("galaxy_score", 0)
+                        alt_ = pt.get("alt_rank", 0)
+                        senti = pt.get("sentiment", 0)
+
+                        # On n'utilise plus volatility_24h => on laisse, 
+                        # ou on la retire si on veut la capter, c'est possible.
+                        soc_dom = pt.get("social_dominance", 0)
+                        mkt_dom = pt.get("market_dominance", 0)
+                        # On ne garde PAS volatility_24h => on ignore
+                        # On retire "volatility_24h" si vous le souhaitez
 
                         rows.append([
-                            dt_utc, o, c, h, lo, vol, mc, gal, alt_, senti
+                            dt_utc, o, c, h, lo, vol,
+                            mc, gal, alt_, senti,
+                            soc_dom, mkt_dom
                         ])
                     if rows:
                         df_out = pd.DataFrame(rows, columns=[
-                            "date","open","close","high","low","volume","market_cap",
-                            "galaxy_score","alt_rank","sentiment"
+                            "date","open","close","high","low","volume",
+                            "market_cap","galaxy_score","alt_rank","sentiment",
+                            "social_dominance","market_dominance"
                         ])
                 break
-            elif r.status_code == 429:
-                logging.warning(f"[429] => {symbol}, wait 60s")
-                time.sleep(60)
+
+            elif code in (429, 502, 530):
+                wait_s = 30*(attempt+1)
+                logging.warning(f"[WARN] {symbol} => code={code}, wait {wait_s}s => retry")
+                time.sleep(wait_s)
+
             else:
-                logging.warning(f"[WARN] => {symbol}, code={r.status_code}, skip.")
+                logging.warning(f"[WARN] {symbol} => code={code}, skip.")
                 break
+
         except Exception as e:
-            logging.error(f"[ERROR] => {symbol} => {e}")
-            break
+            logging.error(f"[ERROR] {symbol} => {e}")
+            wait_s = 30*(attempt+1)
+            time.sleep(wait_s)
 
     if df_out is None or df_out.empty:
         return None
@@ -429,7 +443,7 @@ def fetch_lunar_data_2y(symbol: str) -> Optional[pd.DataFrame]:
     return df_out
 
 ########################################
-# compute_label => +5% sur SHIFT_DAYS=2
+# compute_label => +5%
 ########################################
 
 def compute_label(df_in):
@@ -449,9 +463,11 @@ def compute_label(df_in):
 def main():
     logging.info("=== build_csv => start ===")
 
+    # Récup 2 ans BTC, ETH
     df_btc = fetch_lunar_data_2y("BTC")
     if df_btc is None or df_btc.empty:
         df_btc = pd.DataFrame(columns=["date","close"])
+
     df_eth = fetch_lunar_data_2y("ETH")
     if df_eth is None or df_eth.empty:
         df_eth = pd.DataFrame(columns=["date","close"])
@@ -462,21 +478,28 @@ def main():
     for i, tk in enumerate(TOKENS, start=1):
         sym = tk["symbol"]
         logging.info(f"[TOK {i}/{nb}] => {sym}")
+
         df_ = fetch_lunar_data_2y(sym)
         if df_ is None or df_.empty:
             logging.warning(f"[SKIP] => {sym}")
             continue
 
-        # 1) label => +5% /2j
+        # 1) label
         df_ = compute_label(df_)
 
         # 2) Convert to float
-        for c_ in ["open","high","low","close","volume","market_cap","galaxy_score","alt_rank","sentiment"]:
-            df_[c_] = pd.to_numeric(df_[c_], errors="coerce")
+        for c_ in [
+            "open","high","low","close","volume","market_cap",
+            "galaxy_score","alt_rank","sentiment",
+            "social_dominance","market_dominance"
+        ]:
+            if c_ in df_.columns:
+                df_[c_] = pd.to_numeric(df_[c_], errors="coerce")
+            else:
+                df_[c_] = 0.0
 
-        # 3) compute_indicators => rsi14,rsi30,macd_std,atr14, ma_close_7d, ma_close_14d
-        from indicators import compute_indicators
-        df_ind = compute_indicators(df_)
+        # 3) compute_indicators_extended
+        df_ind = compute_indicators_extended(df_)
 
         df_ind["label"] = df_["label"]
         df_ind.dropna(subset=["label"], inplace=True)
@@ -485,76 +508,67 @@ def main():
         df_ind.sort_values("date", inplace=True)
         df_ind.reset_index(drop=True, inplace=True)
 
-        # 4) Remplacer NaN par 0 => galaxy_score, alt_rank, sentiment, market_cap
-        for col_ in ["galaxy_score","alt_rank","sentiment","market_cap"]:
+        # fillna(0)
+        for col_ in [
+            "galaxy_score","alt_rank","sentiment","market_cap",
+            "social_dominance","market_dominance"
+        ]:
             df_ind[col_] = df_ind[col_].fillna(0)
 
-        # 5) Calcul delta_close_1d,3d
-        df_ind["delta_close_1d"] = df_ind["close"].pct_change(periods=1, fill_method=None)
-        df_ind["delta_close_3d"] = df_ind["close"].pct_change(periods=3, fill_method=None)
+        # Deltas
+        df_ind["delta_close_1d"] = df_ind["close"].pct_change(1)
+        df_ind["delta_close_3d"] = df_ind["close"].pct_change(3)
+        df_ind["delta_vol_1d"]   = df_ind["volume"].pct_change(1)
+        df_ind["delta_vol_3d"]   = df_ind["volume"].pct_change(3)
 
-        # delta_vol_1d,3d
-        df_ind["delta_vol_1d"] = df_ind["volume"].pct_change(1, fill_method=None)
-        df_ind["delta_vol_3d"] = df_ind["volume"].pct_change(3, fill_method=None)
+        df_ind["delta_mcap_1d"]  = df_ind["market_cap"].pct_change(1)
+        df_ind["delta_mcap_3d"]  = df_ind["market_cap"].pct_change(3)
 
-        # delta_mcap_1d,3d
-        df_ind["delta_mcap_1d"] = df_ind["market_cap"].pct_change(1, fill_method=None)
-        df_ind["delta_mcap_3d"] = df_ind["market_cap"].pct_change(3, fill_method=None)
-
-        # delta_galaxy_score_3d
         df_ind["delta_galaxy_score_3d"] = df_ind["galaxy_score"].diff(3)
+        df_ind["delta_alt_rank_3d"]     = df_ind["alt_rank"].diff(3)
 
-        # delta_alt_rank_3d
-        df_ind["delta_alt_rank_3d"] = df_ind["alt_rank"].diff(3)
+        df_ind["delta_social_dom_3d"]   = df_ind["social_dominance"].diff(3)
+        df_ind["delta_market_dom_3d"]   = df_ind["market_dominance"].diff(3)
+        # On n'utilise plus volatility_24h => on n'en fait pas delta_volatility_3d
 
-        # Merge BTC, ETH => rename
+        # Merge BTC, ETH => (close)
         df_btc2 = df_btc[["date","close"]].rename(columns={"close":"btc_close"})
         df_eth2 = df_eth[["date","close"]].rename(columns={"close":"eth_close"})
         merged = pd.merge(df_ind, df_btc2, on="date", how="left")
         merged = pd.merge(merged, df_eth2, on="date", how="left")
-
         merged["btc_close"] = merged["btc_close"].fillna(0)
         merged["eth_close"] = merged["eth_close"].fillna(0)
 
-        merged["btc_daily_change"] = merged["btc_close"].pct_change(1, fill_method=None)
-        merged["btc_3d_change"]    = merged["btc_close"].pct_change(3, fill_method=None)
-        merged["eth_daily_change"] = merged["eth_close"].pct_change(1, fill_method=None)
-        merged["eth_3d_change"]    = merged["eth_close"].pct_change(3, fill_method=None)
+        merged["btc_daily_change"] = merged["btc_close"].pct_change(1)
+        merged["btc_3d_change"]    = merged["btc_close"].pct_change(3)
+        merged["eth_daily_change"] = merged["eth_close"].pct_change(1)
+        merged["eth_3d_change"]    = merged["eth_close"].pct_change(3)
 
-        # On remplace inf par NaN
+        # remove inf
         merged.replace([np.inf, -np.inf], np.nan, inplace=True)
 
-        # dropna final
-        # => On NE VEUT PLUS delta_sentiment_3d => on retire de la liste
-        merged.dropna(subset=[
-            "delta_close_1d","delta_close_3d",
-            "delta_vol_1d","delta_vol_3d",
+        needed_cols = [
+            "delta_close_1d","delta_close_3d","delta_vol_1d","delta_vol_3d",
             "rsi14","rsi30","ma_close_7d","ma_close_14d","atr14","macd_std",
+            "stoch_rsi_k","stoch_rsi_d","mfi14","boll_percent_b","obv","adx","adx_pos","adx_neg",
             "btc_daily_change","btc_3d_change","eth_daily_change","eth_3d_change",
-            "delta_mcap_1d","delta_mcap_3d",
-            "galaxy_score","delta_galaxy_score_3d",
-            "alt_rank","delta_alt_rank_3d",
-            "sentiment",
-            "label"  # plus delta_sentiment_3d !
-        ], inplace=True)
+            "delta_mcap_1d","delta_mcap_3d","galaxy_score","delta_galaxy_score_3d",
+            "alt_rank","delta_alt_rank_3d","sentiment",
+            "social_dominance","market_dominance",
+            "delta_social_dom_3d","delta_market_dom_3d",
+            # Retiré: volatility_24h et delta_volatility_3d
+            "label"
+        ]
+        merged.dropna(subset=needed_cols, inplace=True)
 
         all_dfs.append(merged)
         time.sleep(SLEEP_BETWEEN_TOKENS)
 
+    # Check final
     if not all_dfs:
-        logging.warning("[WARN] => No data => minimal CSV")
-        final_cols = [
-            "date","symbol","label",
-            "delta_close_1d","delta_close_3d",
-            "delta_vol_1d","delta_vol_3d",
-            "rsi14","rsi30","ma_close_7d","ma_close_14d","atr14","macd_std",
-            "btc_daily_change","btc_3d_change","eth_daily_change","eth_3d_change",
-            "delta_mcap_1d","delta_mcap_3d",
-            "galaxy_score","delta_galaxy_score_3d",
-            "alt_rank","delta_alt_rank_3d",
-            "sentiment"
-        ]
-        df_empty = pd.DataFrame(columns=final_cols)
+        logging.warning("[WARN] => No data => minimal CSV.")
+        empty_cols = ["date","symbol"] + needed_cols
+        df_empty = pd.DataFrame(columns=empty_cols)
         df_empty.to_csv(OUTPUT_CSV, index=False)
         print(f"[WARN] empty => {OUTPUT_CSV}")
         return
@@ -563,25 +577,13 @@ def main():
     df_final.sort_values(["symbol","date"], inplace=True)
     df_final.reset_index(drop=True, inplace=True)
 
-    # On ne garde QUE (21 features + date,symbol,label),
-    # => enlevé delta_sentiment_3d
-    final_cols = [
-        "date","symbol","label",
-        "delta_close_1d","delta_close_3d",
-        "delta_vol_1d","delta_vol_3d",
-        "rsi14","rsi30","ma_close_7d","ma_close_14d","atr14","macd_std",
-        "btc_daily_change","btc_3d_change","eth_daily_change","eth_3d_change",
-        "delta_mcap_1d","delta_mcap_3d",
-        "galaxy_score","delta_galaxy_score_3d",
-        "alt_rank","delta_alt_rank_3d",
-        "sentiment"
-    ]
+    final_cols = ["date","symbol"] + needed_cols
     df_final = df_final[final_cols].copy()
 
     df_final.to_csv(OUTPUT_CSV, index=False)
-    rows_ = len(df_final)
-    print(f"[OK] => {OUTPUT_CSV} with {rows_} lines")
-    logging.info(f"[OK] => {OUTPUT_CSV} => {rows_} lines")
+    nb_rows = len(df_final)
+    print(f"[OK] => {OUTPUT_CSV} with {nb_rows} lines")
+    logging.info(f"[OK] => {OUTPUT_CSV} => {nb_rows} lines")
     logging.info("=== DONE build_csv ===")
 
 if __name__=="__main__":
