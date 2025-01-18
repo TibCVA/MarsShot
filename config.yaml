@@ -105,14 +105,14 @@ tokens_daily:
   - "ARK"
 strategy:
   capital_initial: 821.0
-  buy_threshold: 0.7
-  sell_threshold: 0.25
-  stop_loss_pct: 0.30
-  partial_take_profit_pct: 0.5
-  partial_take_profit_ratio: 0.35
-  trailing_trigger_pct: 2.0
-  trailing_pct: 0.30
-  big_gain_exception_pct: 4.0
+  buy_threshold: 0.68
+  sell_threshold: 0.3
+  stop_loss_pct: 0.25
+  partial_take_profit_pct: 0.45
+  partial_take_profit_ratio: 0.4
+  trailing_trigger_pct: 1.8
+  trailing_pct: 0.25
+  big_gain_exception_pct: 2.0
   check_interval_seconds: 300
   daily_update_hour_utc: 0
 
