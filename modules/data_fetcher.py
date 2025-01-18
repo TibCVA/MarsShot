@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# coding: utf-8
+# -*- coding: utf-8 -*-
 
 import requests
 import logging
@@ -7,12 +7,12 @@ import time
 import pandas as pd
 import os
 import yaml
-from datetime import datetime
 import numpy as np
+from datetime import datetime, timedelta
 from typing import Optional
 
-from indicators import compute_rsi_macd_atr
 from binance.client import Client
+from indicators import compute_indicators_extended
 
 CONFIG_FILE = "config.yaml"
 if not os.path.exists(CONFIG_FILE):
@@ -30,11 +30,10 @@ OUTPUT_INFERENCE_CSV = "daily_inference_data.csv"
 
 binance_client = Client(BINANCE_KEY, BINANCE_SECRET)
 
-LUNAR_API_KEY = CONFIG["lunarcrush"]["api_key"]
-INTERVAL      = "1y"
-SLEEP_BETWEEN_TOKENS = 60
+LUNAR_API_KEY  = CONFIG["lunarcrush"]["api_key"]
+LOOKBACK_DAYS  = 60
+SLEEP_BETWEEN_TOKENS = 12
 
-# => Append mode
 logging.basicConfig(
     filename=LOG_FILE,
     filemode='a',
@@ -43,19 +42,208 @@ logging.basicConfig(
 )
 logging.info("=== START data_fetcher => daily_inference_data.csv ===")
 
-def fetch_current_price_from_binance(symbol: str):
-    # Code inchangé ...
-    if symbol not in symbol_map:
-        logging.error(f"[BINANCE PRICE] {symbol} absent du symbol_mapping => skip")
-        return None
-    # etc.
 
-# ... (reste inchangé) ...
+def fetch_lunar_data_inference(symbol: str, lookback_days=LOOKBACK_DAYS) -> Optional[pd.DataFrame]:
+    """
+    Récupère environ 60 jours de données journalières sur LunarCrush
+    (sans volatility_24h ni social_volume_24h, etc.).
+    Gère 429, 502, 530 => retry exponentiel.
+    """
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=lookback_days)
+    start_ts = int(start_date.timestamp())
+    end_ts   = int(end_date.timestamp())
+
+    url = f"https://lunarcrush.com/api4/public/coins/{symbol}/time-series/v2"
+    params = {
+        "key": LUNAR_API_KEY,
+        "bucket": "day",
+        "start": start_ts,
+        "end":   end_ts
+    }
+    max_retries = 3
+    df_out = None
+
+    for attempt in range(max_retries):
+        try:
+            r = requests.get(url, params=params, timeout=30)
+            code = r.status_code
+            logging.info(f"[LUNAR INF] {symbol} => {code} attempt {attempt+1}/{max_retries}")
+
+            if code == 200:
+                j = r.json()
+                data_pts = j.get("data", [])
+                if data_pts:
+                    rows = []
+                    for pt in data_pts:
+                        unix_ts = pt.get("time")
+                        if not unix_ts:
+                            continue
+                        dt_utc = datetime.utcfromtimestamp(unix_ts)
+
+                        o   = pt.get("open", 0)
+                        c   = pt.get("close", 0)
+                        hi  = pt.get("high", 0)
+                        lo  = pt.get("low", 0)
+                        vol = pt.get("volume_24h", 0)
+                        mc  = pt.get("market_cap", 0)
+                        gal = pt.get("galaxy_score", 0)
+                        alt_= pt.get("alt_rank", 0)
+                        senti= pt.get("sentiment", 0)
+
+                        # On ne prend pas volatility_24h
+                        soc_dom= pt.get("social_dominance", 0)
+                        mkt_dom= pt.get("market_dominance", 0)
+
+                        rows.append([
+                            dt_utc, o, c, hi, lo, vol, mc,
+                            gal, alt_, senti, soc_dom, mkt_dom
+                        ])
+                    if rows:
+                        df_out = pd.DataFrame(rows, columns=[
+                            "date","open","close","high","low","volume","market_cap",
+                            "galaxy_score","alt_rank","sentiment",
+                            "social_dominance","market_dominance"
+                        ])
+                break
+
+            elif code in (429, 502, 530):
+                wait_s = 30*(attempt+1)
+                logging.warning(f"[WARN INF] {symbol} => code={code}, wait {wait_s}s => retry")
+                time.sleep(wait_s)
+            else:
+                logging.warning(f"[WARN INF] => {symbol}, code={code}, skip.")
+                break
+
+        except Exception as e:
+            logging.error(f"[ERROR INF] => {symbol} => {e}")
+            wait_s = 30*(attempt+1)
+            time.sleep(wait_s)
+
+    if df_out is None or df_out.empty:
+        return None
+
+    df_out.sort_values("date", inplace=True)
+    df_out.drop_duplicates(subset=["date"], keep="first", inplace=True)
+    df_out.reset_index(drop=True, inplace=True)
+    return df_out
+
 
 def main():
     logging.info("=== START data_fetcher => daily_inference_data.csv ===")
-    # Contenu inchangé...
-    # Fin main()
 
-if __name__ == "__main__":
+    df_btc = fetch_lunar_data_inference("BTC", LOOKBACK_DAYS)
+    if df_btc is None:
+        df_btc = pd.DataFrame(columns=["date","close"])
+
+    df_eth = fetch_lunar_data_inference("ETH", LOOKBACK_DAYS)
+    if df_eth is None:
+        df_eth = pd.DataFrame(columns=["date","close"])
+
+    all_dfs = []
+    nb = len(TOKENS_DAILY)
+
+    for i, sym in enumerate(TOKENS_DAILY, start=1):
+        logging.info(f"[INF TOKEN {i}/{nb}] => {sym}")
+        df_ = fetch_lunar_data_inference(sym, LOOKBACK_DAYS)
+        if df_ is None or df_.empty:
+            logging.warning(f"[SKIP INF] => {sym}")
+            continue
+
+        # Convert float
+        for c_ in [
+            "open","close","high","low","volume","market_cap",
+            "galaxy_score","alt_rank","sentiment",
+            "social_dominance","market_dominance"
+        ]:
+            if c_ in df_.columns:
+                df_[c_] = pd.to_numeric(df_[c_], errors="coerce")
+            else:
+                df_[c_] = 0.0
+
+        dfi = compute_indicators_extended(df_)
+        dfi.sort_values("date", inplace=True)
+        dfi.reset_index(drop=True, inplace=True)
+
+        for cc in [
+            "galaxy_score","alt_rank","sentiment","market_cap",
+            "social_dominance","market_dominance"
+        ]:
+            dfi[cc] = dfi[cc].fillna(0)
+
+        # Deltas
+        dfi["delta_close_1d"] = dfi["close"].pct_change(1)
+        dfi["delta_close_3d"] = dfi["close"].pct_change(3)
+
+        dfi["delta_vol_1d"]   = dfi["volume"].pct_change(1)
+        dfi["delta_vol_3d"]   = dfi["volume"].pct_change(3)
+
+        dfi["delta_mcap_1d"]  = dfi["market_cap"].pct_change(1)
+        dfi["delta_mcap_3d"]  = dfi["market_cap"].pct_change(3)
+
+        dfi["delta_galaxy_score_3d"] = dfi["galaxy_score"].diff(3)
+        dfi["delta_alt_rank_3d"]     = dfi["alt_rank"].diff(3)
+
+        dfi["delta_social_dom_3d"]   = dfi["social_dominance"].diff(3)
+        dfi["delta_market_dom_3d"]   = dfi["market_dominance"].diff(3)
+        # Pas de delta_volatility_3d
+
+        # Merge BTC, ETH
+        df_btc2 = df_btc[["date","close"]].rename(columns={"close":"btc_close"})
+        df_eth2 = df_eth[["date","close"]].rename(columns={"close":"eth_close"})
+        merged = pd.merge(dfi, df_btc2, on="date", how="left")
+        merged = pd.merge(merged, df_eth2, on="date", how="left")
+
+        merged["btc_close"] = merged["btc_close"].fillna(0)
+        merged["eth_close"] = merged["eth_close"].fillna(0)
+
+        merged["btc_daily_change"] = merged["btc_close"].pct_change(1)
+        merged["btc_3d_change"]    = merged["btc_close"].pct_change(3)
+        merged["eth_daily_change"] = merged["eth_close"].pct_change(1)
+        merged["eth_3d_change"]    = merged["eth_close"].pct_change(3)
+
+        merged.replace([np.inf, -np.inf], np.nan, inplace=True)
+        merged["symbol"] = sym
+
+        needed_cols = [
+            "date","symbol",
+            "delta_close_1d","delta_close_3d","delta_vol_1d","delta_vol_3d",
+            "rsi14","rsi30","ma_close_7d","ma_close_14d","atr14","macd_std",
+            "stoch_rsi_k","stoch_rsi_d","mfi14","boll_percent_b","obv",
+            "adx","adx_pos","adx_neg",
+            "btc_daily_change","btc_3d_change","eth_daily_change","eth_3d_change",
+            "delta_mcap_1d","delta_mcap_3d",
+            "galaxy_score","delta_galaxy_score_3d",
+            "alt_rank","delta_alt_rank_3d",
+            "sentiment",
+            "social_dominance","market_dominance",
+            "delta_social_dom_3d","delta_market_dom_3d"
+        ]
+        merged.dropna(subset=needed_cols, inplace=True)
+
+        if not merged.empty:
+            all_dfs.append(merged)
+
+        time.sleep(SLEEP_BETWEEN_TOKENS)
+
+    if not all_dfs:
+        logging.warning("[WARN] => no data => empty daily_inference_data.csv")
+        df_empty = pd.DataFrame(columns=needed_cols)
+        df_empty.to_csv(OUTPUT_INFERENCE_CSV, index=False)
+        print(f"[WARN] => empty {OUTPUT_INFERENCE_CSV}")
+        return
+
+    df_final = pd.concat(all_dfs, ignore_index=True)
+    df_final.sort_values(["symbol","date"], inplace=True)
+    df_final.reset_index(drop=True, inplace=True)
+
+    final_cols = needed_cols
+    df_final = df_final[final_cols].copy()
+
+    df_final.to_csv(OUTPUT_INFERENCE_CSV, index=False)
+    nb_ = len(df_final)
+    logging.info(f"[DATA_FETCHER] => {OUTPUT_INFERENCE_CSV} with {nb_} lines")
+    print(f"[OK] => {OUTPUT_INFERENCE_CSV} with {nb_} lines")
+
+if __name__=="__main__":
     main()
