@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-# coding: utf-8
+# -*- coding: utf-8 -*-
 
 import time
 import logging
 import datetime
 import yaml
 import os
-import threading
 import pytz
 import subprocess
 
@@ -14,9 +13,6 @@ from modules.trade_executor import TradeExecutor
 from modules.positions_store import load_state, save_state
 from modules.risk_manager import intraday_check_real
 
-# --------------------
-# Charger probabilities => daily_probabilities.csv
-# --------------------
 def load_probabilities_csv(csv_path="daily_probabilities.csv"):
     import pandas as pd
     if not os.path.exists(csv_path):
@@ -34,16 +30,15 @@ def load_probabilities_csv(csv_path="daily_probabilities.csv"):
     return prob_map
 
 def main():
-    # Charger config.yaml
     if not os.path.exists("config.yaml"):
         print("[ERREUR] config.yaml introuvable.")
         return
+
     with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
-    # Logs
     logging.basicConfig(
-        filename=config["logging"]["file"],  # ex: "bot.log"
+        filename=config["logging"]["file"],
         filemode='a',
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s"
@@ -53,7 +48,6 @@ def main():
     state = load_state()
     logging.info(f"[MAIN] Loaded state => keys={list(state.keys())}")
 
-    # TradeExecutor
     bexec = TradeExecutor(
         api_key=config["binance_api"]["api_key"],
         api_secret=config["binance_api"]["api_secret"]
@@ -68,32 +62,31 @@ def main():
             hour_p = now_paris.hour
             min_p  = now_paris.minute
 
-            # daily à 22h00 PARIS
+            # daily => 22h00 PARIS
             if (
                 hour_p == 22
                 and min_p == 0
                 and not state.get("did_daily_update_today", False)
             ):
-                logging.info("[MAIN] It's 22h00 in Paris => launching daily_update_live.")
+                logging.info("[MAIN] 22h => daily_update_live.")
                 daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today => True.")
 
-            # reset flag si hour_p != 22
             if hour_p != 22:
                 if state.get("did_daily_update_today", False):
-                    logging.info("[MAIN] hour!=22 => reset did_daily_update_today=False.")
+                    logging.info("[MAIN] hour!=22 => reset daily_update_today.")
                 state["did_daily_update_today"] = False
                 save_state(state)
 
-            # Intraday check
-            last_check = state.get("last_risk_check_ts", 0)
-            elapsed = time.time() - last_check
-            if elapsed >= config["strategy"]["check_interval_seconds"]:
-                logging.info("[MAIN] Intraday check => intraday_check_real()")
+            # Intraday check => toutes X sec
+            last_check= state.get("last_risk_check_ts", 0)
+            elapsed= time.time() - last_check
+            if elapsed>= config["strategy"]["check_interval_seconds"]:
+                logging.info("[MAIN] intraday_check_real()")
                 intraday_check_real(state, bexec, config)
-                state["last_risk_check_ts"] = time.time()
+                state["last_risk_check_ts"]= time.time()
                 save_state(state)
 
         except Exception as e:
@@ -102,34 +95,27 @@ def main():
         time.sleep(10)
 
 def daily_update_live(state, config, bexec):
-    """
-    Process daily => rafraîchir daily_inference_data.csv, daily_probabilities.csv
-    puis SELL/BUY en fonction des proba.
-    """
     logging.info("[DAILY UPDATE] Start daily_update_live")
 
-    # 1) On exécute data_fetcher.py => daily_inference_data.csv
     try:
-        logging.info("[DAILY UPDATE] Running data_fetcher.py for fresh data.")
+        logging.info("[DAILY UPDATE] data_fetcher.py => daily_inference_data.csv")
         subprocess.run(["python", "data_fetcher.py"], check=False)
     except Exception as e:
-        logging.error(f"[DAILY UPDATE] data_fetcher.py => {e}")
+        logging.error(f"[DAILY UPDATE] data_fetcher => {e}")
 
-    # 2) ml_decision.py => daily_probabilities.csv
     try:
-        logging.info("[DAILY UPDATE] Running ml_decision.py => new probas.")
+        logging.info("[DAILY UPDATE] ml_decision.py => daily_probabilities.csv")
         subprocess.run(["python", "ml_decision.py"], check=False)
     except Exception as e:
-        logging.error(f"[DAILY UPDATE] ml_decision.py => {e}")
+        logging.error(f"[DAILY UPDATE] ml_decision => {e}")
 
-    # 3) Charger daily_probabilities.csv
     prob_map = load_probabilities_csv("daily_probabilities.csv")
 
     tokens = config["tokens_daily"]
     strat  = config["strategy"]
     logging.info(f"[DAILY UPDATE] tokens_daily={tokens}")
 
-    # Récup solde sur Binance => on vend si proba < sell_threshold
+    # Récup solde
     try:
         account_info = bexec.client.get_account()
     except Exception as e:
@@ -161,12 +147,12 @@ def daily_update_live(state, config, bexec):
         if prob < strat["sell_threshold"]:
             meta= state["positions_meta"].get(asset,{})
             did_skip= meta.get("did_skip_sell_once",False)
-            entry_px= meta.get("entry_px", None)
+            entry_px= meta.get("entry_px",None)
 
             current_px= bexec.get_symbol_price(asset)
             if entry_px and entry_px>0:
-                ratio= current_px/entry_px
-                if ratio>= strat["big_gain_exception_pct"] and not did_skip:
+                ratio= current_px/ entry_px
+                if ratio >= strat["big_gain_exception_pct"] and not did_skip:
                     meta["did_skip_sell_once"]= True
                     state["positions_meta"][asset]= meta
                     logging.info(f"[DAILY SELL SKIP big gain] {asset}, ratio={ratio:.2f}, prob={prob:.2f}")
@@ -178,22 +164,22 @@ def daily_update_live(state, config, bexec):
                 del state["positions_meta"][asset]
             save_state(state)
 
-    # BUY logic => top 5
+    # BUY => top 5
     buy_candidates=[]
     for sym in tokens:
         if sym in holdings:
             continue
-        pr= prob_map.get(sym,None)
-        logging.info(f"[DAILY BUY CHECK] {sym}, prob={pr}")
-        if pr is not None and pr>= strat["buy_threshold"]:
-            buy_candidates.append((sym,pr))
+        p= prob_map.get(sym, None)
+        logging.info(f"[DAILY BUY CHECK] {sym}, prob={p}")
+        if p is not None and p >= strat["buy_threshold"]:
+            buy_candidates.append((sym,p))
 
     buy_candidates.sort(key=lambda x:x[1], reverse=True)
     buy_candidates= buy_candidates[:5]
     logging.info(f"[DAILY BUY SELECT] => {buy_candidates}")
 
     if buy_candidates and usdt_balance>10:
-        alloc= usdt_balance/len(buy_candidates)
+        alloc= usdt_balance / len(buy_candidates)
         for sym, pb in buy_candidates:
             qty_bought, avg_px= bexec.buy(sym, alloc)
             logging.info(f"[DAILY BUY EXEC] => {sym}, qty={qty_bought}, px={avg_px:.4f}")
@@ -208,6 +194,7 @@ def daily_update_live(state, config, bexec):
                 save_state(state)
 
     logging.info("[DAILY UPDATE] Done daily_update_live")
+
 
 if __name__=="__main__":
     main()
