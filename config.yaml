@@ -32,7 +32,6 @@ exchanges:
       "BB": "BB"
       "AAVE": "AAVE"
       "SAND": "SAND"
-      "AVA": "AVA"
       "REI": "REI"
       "LUNA": "LUNA"
       "ALICE": "ALICE"
@@ -88,7 +87,6 @@ tokens_daily:
   - "BB"
   - "AAVE"
   - "SAND"
-  - "AVA"
   - "REI"
   - "LUNA"
   - "ALICE"
@@ -120,7 +118,7 @@ tokens_daily:
 strategy:
   capital_initial: 1002.8
   buy_threshold: 0.8
-  sell_threshold: 0.3
+  sell_threshold: 0.4
   stop_loss_pct: 0.25
   partial_take_profit_pct: 0.45
   partial_take_profit_ratio: 0.4
