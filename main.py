@@ -62,21 +62,21 @@ def main():
             hour_p = now_paris.hour
             min_p  = now_paris.minute
 
-            # daily => 22h00 PARIS
+            # daily => 23h59 PARIS
             if (
-                hour_p == 22
-                and min_p == 0
+                hour_p == 23
+                and min_p == 59
                 and not state.get("did_daily_update_today", False)
             ):
-                logging.info("[MAIN] 22h => daily_update_live.")
+                logging.info("[MAIN] 23h59 => daily_update_live.")
                 daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today => True.")
 
-            if hour_p != 22:
+            if hour_p != 23:
                 if state.get("did_daily_update_today", False):
-                    logging.info("[MAIN] hour!=22 => reset daily_update_today.")
+                    logging.info("[MAIN] hour!=23 => reset daily_update_today.")
                 state["did_daily_update_today"] = False
                 save_state(state)
 
