@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# coding: utf-8
+# -*- coding: utf-8 -*-
 
 import os
 import logging
@@ -7,9 +7,12 @@ import yaml
 
 from modules.trade_executor import TradeExecutor
 
-CONFIG_FILE = "config.yaml"
+# On récupère le chemin vers config.yaml
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(CURRENT_DIR, "config.yaml")
+
 if not os.path.exists(CONFIG_FILE):
-    raise FileNotFoundError("[ERREUR] config.yaml introuvable.")
+    raise FileNotFoundError(f"[ERREUR] config.yaml introuvable.")
 
 with open(CONFIG_FILE, "r") as f:
     CONFIG = yaml.safe_load(f)
@@ -26,7 +29,7 @@ def get_portfolio_state():
     bals= info["balances"]
 
     positions=[]
-    total_val=0.0
+    total_val= 0.0
 
     for b in bals:
         asset= b["asset"]
@@ -35,15 +38,12 @@ def get_portfolio_state():
         qty= free+ locked
         if qty<=0: 
             continue
+
         if asset.upper()=="USDT":
             val_usdt= qty
         else:
-            try:
-                px= bexec.get_symbol_price(asset)
-                val_usdt= px* qty
-            except:
-                logging.warning(f"[DASHBOARD] No pair {asset}USDT => skipping.")
-                continue
+            px= bexec.get_symbol_price(asset)
+            val_usdt= px* qty
         positions.append({
             "symbol": asset,
             "qty": round(qty,4),
@@ -57,21 +57,24 @@ def get_portfolio_state():
     }
 
 def list_tokens_tracked():
+    # On retourne la liste "tokens_daily" du config.yaml
     return CONFIG["tokens_daily"]
 
 def get_performance_history():
+    # Ex. renvoyer des placeholders
     pf= get_portfolio_state()
     tv= pf["total_value_usdt"]
     return {
-      "1d":{"usdt":0.0,"pct":0.0},
-      "7d":{"usdt":0.0,"pct":0.0},
-      "1m":{"usdt":0.0,"pct":0.0},
-      "3m":{"usdt":0.0,"pct":0.0},
-      "1y":{"usdt":0.0,"pct":0.0},
-      "all":{"usdt": tv,"pct":0.0}
+      "1d":{"usdt": 0.0,  "pct":0.0},
+      "7d":{"usdt": 0.0,  "pct":0.0},
+      "1m":{"usdt": 0.0,  "pct":0.0},
+      "3m":{"usdt": 0.0,  "pct":0.0},
+      "1y":{"usdt": 0.0,  "pct":0.0},
+      "all":{"usdt": tv, "pct":0.0}
     }
 
 def get_trades_history():
+    # TODO : log de vos trades si vous en avez
     return []
 
 def emergency_out():
@@ -81,6 +84,5 @@ def emergency_out():
         asset= b["asset"]
         qty= float(b["free"])+ float(b["locked"])
         if qty>0 and asset.upper()!="USDT":
-            val= bexec.sell_all(asset, qty)
-            logging.info(f"[EMERGENCY] sold {asset} => {val:.2f} USDT")
+            bexec.sell_all(asset, qty)
     logging.info("[EMERGENCY] Tout vendu.")
