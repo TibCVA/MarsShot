@@ -25,20 +25,19 @@ def load_probabilities_csv(csv_path="daily_probabilities.csv"):
     prob_map = {}
     for i, row in df.iterrows():
         sym = str(row["symbol"]).strip()
-        p   = float(row["prob"])
-        prob_map[sym] = p
+        prob = float(row["prob"])
+        prob_map[sym] = prob
     return prob_map
 
 def run_auto_select_once_per_day(state):
     """
-    Vérifie si on a déjà lancé auto_select_tokens.py aujourd'hui.
-    Si non, on exécute le script, puis on met à jour le state pour ne pas relancer.
+    Sélection auto de tokens (exécute auto_select_tokens.py) si pas déjà fait aujourd'hui.
     """
     if state.get("did_auto_select_today", False):
-        return  # déjà fait ce jour
-
+        return
     logging.info("[MAIN] => auto_select_tokens.py => start")
     try:
+        # Exécution synchronisée : on attend la fin du script
         subprocess.run(["python", "auto_select_tokens.py"], check=False)
         state["did_auto_select_today"] = True
         save_state(state)
@@ -46,27 +45,49 @@ def run_auto_select_once_per_day(state):
     except Exception as e:
         logging.error(f"[MAIN] run_auto_select_once_per_day => {e}")
 
-def daily_update_live(state, config, bexec):
+def daily_update_live(state, bexec):
     """
-    Exécute le data_fetcher + ml_decision, puis la logique SELL/BUY 'daily'
+    Recharge config.yaml (pour lire les tokens modifiés par auto_select),
+    lance data_fetcher, puis ml_decision si CSV existe et n'est pas vide,
+    puis effectue la logique daily SELL/BUY sur base des probas.
     """
     logging.info("[DAILY UPDATE] Start daily_update_live")
+
+    # Recharger config.yaml (important si auto_select_tokens.py a modifié tokens_daily)
+    if not os.path.exists("config.yaml"):
+        logging.error("[DAILY UPDATE] config.yaml introuvable.")
+        return
+    with open("config.yaml","r") as f:
+        config = yaml.safe_load(f)
 
     # 1) data_fetcher
     try:
         logging.info("[DAILY UPDATE] => modules/data_fetcher.py")
-        subprocess.run(["python", "modules/data_fetcher.py"], check=False)
+        ret = subprocess.run(["python", "modules/data_fetcher.py"], check=False)
     except Exception as e:
         logging.error(f"[DAILY UPDATE] data_fetcher => {e}")
+        return
+
+    # Vérifier si daily_inference_data.csv est créé et non vide
+    csv_data = "daily_inference_data.csv"
+    if not os.path.exists(csv_data):
+        logging.warning(f"[DAILY UPDATE] {csv_data} introuvable => skip ml_decision.")
+        # On skip la suite => pas de probas
+        return
+    import os
+    if os.path.getsize(csv_data) < 100:  # par ex. 100 octets
+        logging.warning(f"[DAILY UPDATE] {csv_data} trop petit => skip ml_decision.")
+        return
 
     # 2) ml_decision
     try:
         logging.info("[DAILY UPDATE] => modules/ml_decision.py")
-        subprocess.run(["python", "modules/ml_decision.py"], check=False)
+        ret2 = subprocess.run(["python", "modules/ml_decision.py"], check=False)
     except Exception as e:
         logging.error(f"[DAILY UPDATE] ml_decision => {e}")
+        return
 
-    # 3) Chargement probas
+    # 3) Charger probas
     prob_map = load_probabilities_csv("daily_probabilities.csv")
     tokens   = config["tokens_daily"]
     strat    = config["strategy"]
@@ -83,10 +104,10 @@ def daily_update_live(state, config, bexec):
     holdings = {}
     usdt_balance = 0.0
     for b in balances:
-        asset  = b["asset"]
-        free   = float(b["free"])
-        locked = float(b["locked"])
-        qty    = free + locked
+        asset = b["asset"]
+        free  = float(b["free"])
+        locked= float(b["locked"])
+        qty   = free + locked
         if asset.upper() == "USDT":
             usdt_balance = qty
         elif qty > 0:
@@ -103,14 +124,13 @@ def daily_update_live(state, config, bexec):
             continue
 
         if prob < strat["sell_threshold"]:
-            meta      = state["positions_meta"].get(asset, {})
-            did_skip  = meta.get("did_skip_sell_once", False)
-            entry_px  = meta.get("entry_px", None)
-            current_px= bexec.get_symbol_price(asset)
+            meta = state["positions_meta"].get(asset, {})
+            did_skip = meta.get("did_skip_sell_once", False)
+            entry_px = meta.get("entry_px", None)
+            current_px = bexec.get_symbol_price(asset)
 
             if entry_px and entry_px > 0:
                 ratio = current_px / entry_px
-                # big_gain_exception_pct => on skip la vente 1 fois si on dépasse
                 if ratio >= strat["big_gain_exception_pct"] and not did_skip:
                     meta["did_skip_sell_once"] = True
                     state["positions_meta"][asset] = meta
@@ -123,7 +143,7 @@ def daily_update_live(state, config, bexec):
                 del state["positions_meta"][asset]
             save_state(state)
 
-    # 6) BUY => top 5 par proba
+    # 6) BUY => top 5
     buy_candidates = []
     for sym in tokens:
         if sym in holdings:
@@ -154,15 +174,13 @@ def daily_update_live(state, config, bexec):
 
     logging.info("[DAILY UPDATE] Done daily_update_live")
 
-########################################
-# MAIN
-########################################
 def main():
     if not os.path.exists("config.yaml"):
         print("[ERREUR] config.yaml introuvable.")
         return
 
-    with open("config.yaml", "r") as f:
+    # Charger une première fois config.yaml (même si on rechargera plus tard)
+    with open("config.yaml","r") as f:
         config = yaml.safe_load(f)
 
     logging.basicConfig(
@@ -173,18 +191,18 @@ def main():
     )
     logging.info("[MAIN] Starting main loop (LIVE).")
 
-    # Chargement du state
+    # Charger le state
     state = load_state()
     logging.info(f"[MAIN] Loaded state => keys={list(state.keys())}")
 
-    # Initialisation Binance
+    # Init binance
     bexec = TradeExecutor(
         api_key=config["binance_api"]["api_key"],
         api_secret=config["binance_api"]["api_secret"]
     )
     logging.info("[MAIN] TradeExecutor initialized.")
 
-    # Fuseau pour heure Paris
+    # Fuseau
     paris_tz = pytz.timezone("Europe/Paris")
 
     while True:
@@ -193,33 +211,31 @@ def main():
             hour_p = now_paris.hour
             min_p  = now_paris.minute
 
-            # 1) auto_select => 23h50 (heure Paris)
-            if hour_p == 23 and min_p == 50 and not state.get("did_auto_select_today", False):
+            # 1) auto_select => 00h25 (heure Paris)
+            if hour_p == 0 and min_p == 25 and not state.get("did_auto_select_today", False):
                 run_auto_select_once_per_day(state)
 
-            # 2) daily => 00h00 (minuit, heure Paris)
-            if hour_p == 0 and min_p == 0 and not state.get("did_daily_update_today", False):
-                logging.info("[MAIN] 00h00 => daily_update_live.")
-                daily_update_live(state, config, bexec)
+            # 2) daily => 00h35 (heure Paris)
+            if hour_p == 0 and min_p == 35 and not state.get("did_daily_update_today", False):
+                logging.info("[MAIN] 00h35 => daily_update_live.")
+                daily_update_live(state, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today => True.")
 
-            # 3) Reset flags si on n'est plus dans l'heure 23 ou 0
-            #    (pour ne pas relancer auto_select / daily_update plusieurs fois)
-            if hour_p != 23:
+            # 3) Reset flags si on n'est plus dans l'heure 0
+            if hour_p != 0:
                 if state.get("did_auto_select_today", False):
                     logging.info("[MAIN] reset did_auto_select_today.")
                 state["did_auto_select_today"] = False
 
-            if hour_p != 0:
                 if state.get("did_daily_update_today", False):
                     logging.info("[MAIN] reset daily_update_today.")
                 state["did_daily_update_today"] = False
 
-            save_state(state)
+                save_state(state)
 
-            # Intraday check => toutes X secondes
+            # 4) Intraday check => toutes X secondes
             last_check = state.get("last_risk_check_ts", 0)
             elapsed = time.time() - last_check
             if elapsed >= config["strategy"]["check_interval_seconds"]:
