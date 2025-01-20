@@ -94,7 +94,7 @@ def daily_update_live(state, config, bexec):
         qty   = free + locked
         if asset.upper() == "USDT":
             usdt_balance = qty
-        elif qty>0:
+        elif qty > 0:
             holdings[asset] = qty
 
     logging.info(f"[DAILY UPDATE] holdings={holdings}, usdt={usdt_balance:.2f}")
@@ -158,6 +158,7 @@ def daily_update_live(state, config, bexec):
 
     logging.info("[DAILY UPDATE] Done daily_update_live")
 
+
 ########################################
 # MAIN
 ########################################
@@ -197,20 +198,20 @@ def main():
             hour_p = now_paris.hour
             min_p  = now_paris.minute
 
-            # 1) auto_select => 14h30
-            if hour_p == 14 and min_p == 30 and not state.get("did_auto_select_today", False):
+            # 1) auto_select => 15h30
+            if hour_p == 15 and min_p == 30 and not state.get("did_auto_select_today", False):
                 run_auto_select_once_per_day(state)
 
-            # 2) daily => 14h45 => data_fetcher / ml_decision / daily_update
-            if hour_p == 14 and min_p == 45 and not state.get("did_daily_update_today", False):
-                logging.info("[MAIN] 14h45 => daily_update_live.")
+            # 2) daily => 15h40 => data_fetcher / ml_decision / daily_update
+            if hour_p == 15 and min_p == 40 and not state.get("did_daily_update_today", False):
+                logging.info("[MAIN] 15h40 => daily_update_live.")
                 daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today => True.")
 
-            # 3) Reset flags si on n'est plus dans l'heure 14
-            if hour_p != 14:
+            # 3) Reset flags si on n'est plus dans l'heure 15
+            if hour_p != 15:
                 if state.get("did_auto_select_today", False):
                     logging.info("[MAIN] reset did_auto_select_today.")
                 state["did_auto_select_today"] = False
