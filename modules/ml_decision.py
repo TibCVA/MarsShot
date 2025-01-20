@@ -8,11 +8,8 @@ import pandas as pd
 import joblib
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# On part du principe que "model.pkl" est dans modules/ (cf. votre capture)
-MODEL_FILE        = os.path.join(CURRENT_DIR, "model.pkl")
-
-# Les CSV sont dans le dossier racine (../)
+# Chemins => on monte d'un cran (..) pour la racine
+MODEL_FILE        = os.path.join(CURRENT_DIR, "..", "model.pkl")
 INPUT_CSV         = os.path.join(CURRENT_DIR, "..", "daily_inference_data.csv")
 OUTPUT_PROBA_CSV  = os.path.join(CURRENT_DIR, "..", "daily_probabilities.csv")
 LOG_FILE          = "ml_decision.log"
@@ -53,7 +50,7 @@ def main():
         print(msg)
         return
 
-    # Chargement du pipeline + threshold
+    # Chargement du pipeline
     loaded = joblib.load(MODEL_FILE)
     if isinstance(loaded, tuple):
         model, custom_threshold = loaded
@@ -80,7 +77,7 @@ def main():
     before = len(df)
     df.dropna(subset=COLUMNS_ORDER, inplace=True)
     after = len(df)
-    if after < before:
+    if after<before:
         logging.warning(f"[WARN] Drop {before-after} lignes => NaN dans features.")
 
     if df.empty:
@@ -96,7 +93,7 @@ def main():
     out_rows = []
     for i, row in df.iterrows():
         sym = row["symbol"]
-        p = prob_1[i]
+        p   = prob_1[i]
         out_rows.append([sym, p])
 
     df_out = pd.DataFrame(out_rows, columns=["symbol","prob"])
@@ -106,7 +103,6 @@ def main():
     df_out.to_csv(OUTPUT_PROBA_CSV, index=False)
     logging.info(f"[INFO] Probabilités sauvegardées => {OUTPUT_PROBA_CSV}, rows={len(df_out)}")
     print(f"[OK] daily_probabilities.csv => {len(df_out)} tokens.")
-
     logging.info("=== END ml_decision (BATCH) ===")
 
 
