@@ -43,7 +43,6 @@ def run_auto_select_once_per_day(state):
 
     logging.info("[MAIN] => auto_select_tokens.py => start")
     try:
-        # Lancement du script auto_select_tokens.py
         subprocess.run(["python", "auto_select_tokens.py"], check=False)
         state["did_auto_select_today"] = True
         save_state(state)
@@ -198,20 +197,20 @@ def main():
             hour_p = now_paris.hour
             min_p  = now_paris.minute
 
-            # 1) auto_select => 20h15
-            if hour_p == 20 and min_p == 15 and not state.get("did_auto_select_today", False):
+            # 1) auto_select => 21h30
+            if hour_p == 21 and min_p == 30 and not state.get("did_auto_select_today", False):
                 run_auto_select_once_per_day(state)
 
-            # 2) daily => 20h25 => data_fetcher / ml_decision / daily_update
-            if hour_p == 20 and min_p == 25 and not state.get("did_daily_update_today", False):
-                logging.info("[MAIN] 20h25 => daily_update_live.")
+            # 2) daily => 21h40 => data_fetcher / ml_decision / daily_update
+            if hour_p == 21 and min_p == 40 and not state.get("did_daily_update_today", False):
+                logging.info("[MAIN] 21h40 => daily_update_live.")
                 daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today => True.")
 
-            # 3) Reset flags si on n'est plus dans l'heure 20
-            if hour_p != 20:
+            # 3) Reset flags hors de 21h
+            if hour_p != 21:
                 if state.get("did_auto_select_today", False):
                     logging.info("[MAIN] reset did_auto_select_today.")
                 state["did_auto_select_today"] = False
