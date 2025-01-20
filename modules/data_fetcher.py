@@ -39,6 +39,7 @@ logging.basicConfig(
 )
 logging.info("=== START data_fetcher => daily_inference_data.csv ===")
 
+
 def fetch_lunar_data_inference(symbol: str, lookback_days=LOOKBACK_DAYS) -> Optional[pd.DataFrame]:
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=lookback_days)
@@ -52,6 +53,8 @@ def fetch_lunar_data_inference(symbol: str, lookback_days=LOOKBACK_DAYS) -> Opti
         "start": start_ts,
         "end":   end_ts
     }
+    logging.info(f"[LUNAR INF] => symbol={symbol}, start_dt={start_date}, end_dt={end_date}, lookback_days={lookback_days}")
+
     max_retries = 3
     df_out = None
 
@@ -59,11 +62,14 @@ def fetch_lunar_data_inference(symbol: str, lookback_days=LOOKBACK_DAYS) -> Opti
         try:
             r = requests.get(url, params=params, timeout=30)
             code = r.status_code
-            logging.info(f"[LUNAR INF] {symbol} => {code} (attempt {attempt+1}/{max_retries})")
-
+            logging.info(f"[LUNAR INF] {symbol} => code={code}, attempt={attempt+1}/{max_retries}, url={r.url}")
             if code == 200:
+                txt_len = len(r.text)
+                logging.info(f"[LUNAR INF] {symbol} => 200 OK. response length={txt_len}")
                 j = r.json()
                 data_pts = j.get("data", [])
+                logging.info(f"[LUNAR INF] {symbol} => data_pts.length={len(data_pts)}")
+
                 if data_pts:
                     rows = []
                     for pt in data_pts:
@@ -93,31 +99,44 @@ def fetch_lunar_data_inference(symbol: str, lookback_days=LOOKBACK_DAYS) -> Opti
                             "social_dominance","market_dominance"
                         ])
                 break
+
             elif code in (429, 502, 530):
+                # On logge le début de la réponse pour info
                 wait_s = 30*(attempt+1)
-                logging.warning(f"[WARN INF] {symbol} => code={code}, wait {wait_s}s => retry")
+                logging.warning(
+                    f"[WARN INF] {symbol} => code={code}, response={r.text[:150]}, wait {wait_s}s => retry"
+                )
                 time.sleep(wait_s)
             else:
-                logging.warning(f"[WARN INF] => {symbol}, code={code}, skip.")
+                logging.warning(
+                    f"[WARN INF] => {symbol}, code={code}, response={r.text[:150]}, skip."
+                )
                 break
+
         except Exception as e:
-            logging.error(f"[ERROR INF] => {symbol} => {e}")
+            logging.error(f"[ERROR INF] => {symbol} => {e}", exc_info=True)
             wait_s = 30*(attempt+1)
             time.sleep(wait_s)
 
     if df_out is None or df_out.empty:
+        logging.warning(f"[LUNAR INF] {symbol} => df_out is None/empty => returning None")
         return None
 
+    logging.info(f"[LUNAR INF] {symbol} => final df_out.shape={df_out.shape}")
     df_out.sort_values("date", inplace=True)
     df_out.drop_duplicates(subset=["date"], keep="first", inplace=True)
     df_out.reset_index(drop=True, inplace=True)
     return df_out
 
+
 def main():
     logging.info("=== START data_fetcher => daily_inference_data.csv ===")
+    logging.info(f"[DATA_FETCHER] current working dir = {os.getcwd()}")
+    logging.info(f"[DATA_FETCHER] config.yaml => {CONFIG_FILE}")
+    logging.info(f"[DATA_FETCHER] LUNAR_API_KEY length = {len(LUNAR_API_KEY)}")
+    logging.info(f"[DATA_FETCHER] TOKENS_DAILY => {TOKENS_DAILY}")
 
-    # Pour BTC/ETH usage => voir si besoin
-    df_btc, df_eth = None, None
+    # Récup BTC/ETH
     df_btc = fetch_lunar_data_inference("BTC", LOOKBACK_DAYS)
     if df_btc is None:
         df_btc = pd.DataFrame(columns=["date","close"])
@@ -127,19 +146,18 @@ def main():
 
     all_dfs = []
     nb = len(TOKENS_DAILY)
-
-    logging.info(f"[DATA_FETCHER] TOKENS_DAILY={TOKENS_DAILY}")
+    logging.info(f"[DATA_FETCHER] Number of tokens => {nb}")
 
     for i, sym in enumerate(TOKENS_DAILY, start=1):
         logging.info(f"[INF TOKEN {i}/{nb}] => {sym}")
-        # On met un try pour s'assurer de pas bloquer sur 1 token
         try:
             df_ = fetch_lunar_data_inference(sym, LOOKBACK_DAYS)
             if df_ is None or df_.empty:
                 logging.warning(f"[SKIP INF] => {sym}")
                 continue
 
-            # Convert float
+            logging.info(f"[PARSE] {sym} => initial df_.shape={df_.shape}, date range={df_['date'].min()} .. {df_['date'].max()}")
+
             for c_ in [
                 "open","close","high","low","volume","market_cap",
                 "galaxy_score","alt_rank","sentiment",
@@ -160,7 +178,6 @@ def main():
             ]:
                 dfi[cc] = dfi[cc].fillna(0)
 
-            # Deltas
             dfi["delta_close_1d"] = dfi["close"].pct_change(1)
             dfi["delta_close_3d"] = dfi["close"].pct_change(3)
 
@@ -176,16 +193,25 @@ def main():
             dfi["delta_social_dom_3d"]   = dfi["social_dominance"].diff(3)
             dfi["delta_market_dom_3d"]   = dfi["market_dominance"].diff(3)
 
-            # Merge BTC, ETH => close
+            # Merge BTC
             df_btc2 = df_btc[["date","close"]].rename(columns={"close":"btc_close"})
-            df_eth2 = df_eth[["date","close"]].rename(columns={"close":"eth_close"})
+            before_merge = len(dfi)
             merged = pd.merge(dfi, df_btc2, on="date", how="left")
-            merged = pd.merge(merged, df_eth2, on="date", how="left")
-            merged["btc_close"] = merged["btc_close"].fillna(0)
-            merged["eth_close"] = merged["eth_close"].fillna(0)
+            after_merge = len(merged)
+            logging.info(f"[MERGE BTC] {sym} => before={before_merge}, after={after_merge}")
 
+            merged["btc_close"] = merged["btc_close"].fillna(0)
             merged["btc_daily_change"] = merged["btc_close"].pct_change(1)
             merged["btc_3d_change"]    = merged["btc_close"].pct_change(3)
+
+            # Merge ETH
+            df_eth2 = df_eth[["date","close"]].rename(columns={"close":"eth_close"})
+            before_merge_eth = len(merged)
+            merged = pd.merge(merged, df_eth2, on="date", how="left")
+            after_merge_eth = len(merged)
+            logging.info(f"[MERGE ETH] {sym} => before={before_merge_eth}, after={after_merge_eth}")
+
+            merged["eth_close"] = merged["eth_close"].fillna(0)
             merged["eth_daily_change"] = merged["eth_close"].pct_change(1)
             merged["eth_3d_change"]    = merged["eth_close"].pct_change(3)
 
@@ -205,13 +231,20 @@ def main():
                 "social_dominance","market_dominance",
                 "delta_social_dom_3d","delta_market_dom_3d"
             ]
+
+            rows_before_dropna = len(merged)
             merged.dropna(subset=needed_cols, inplace=True)
+            rows_after_dropna = len(merged)
+            logging.info(f"[DROPNA] {sym} => from {rows_before_dropna} to {rows_after_dropna} after needed_cols drop")
 
             if not merged.empty:
                 all_dfs.append(merged)
+                logging.info(f"[TOKEN OK] {sym} => final shape={merged.shape}")
+            else:
+                logging.warning(f"[TOKEN EMPTY] {sym} => after dropna, empty")
 
         except Exception as ee:
-            logging.warning(f"[TOKEN ERR] => {sym} => {ee}")
+            logging.warning(f"[TOKEN ERR] => {sym} => {ee}", exc_info=True)
 
         time.sleep(SLEEP_BETWEEN_TOKENS)
 
@@ -226,6 +259,8 @@ def main():
     df_final.sort_values(["symbol","date"], inplace=True)
     df_final.reset_index(drop=True, inplace=True)
 
+    logging.info(f"[DATA_FETCHER] Final df_final.shape={df_final.shape}, unique symbols={df_final['symbol'].unique()}")
+
     final_cols = needed_cols
     df_final = df_final[final_cols].copy()
 
@@ -233,6 +268,7 @@ def main():
     nb_ = len(df_final)
     logging.info(f"[DATA_FETCHER] => {OUTPUT_INFERENCE_CSV} with {nb_} lines")
     print(f"[OK] => {OUTPUT_INFERENCE_CSV} with {nb_} lines")
+
 
 if __name__=="__main__":
     main()
