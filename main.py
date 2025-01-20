@@ -13,6 +13,10 @@ from modules.trade_executor import TradeExecutor
 from modules.positions_store import load_state, save_state
 from modules.risk_manager import intraday_check_real
 
+########################################
+# Fonctions utilitaires
+########################################
+
 def load_probabilities_csv(csv_path="daily_probabilities.csv"):
     import pandas as pd
     if not os.path.exists(csv_path):
@@ -103,13 +107,14 @@ def daily_update_live(state, config, bexec):
             logging.info(f"[DAILY SELL] {asset} => prob=None => skip.")
             continue
         if prob < strat["sell_threshold"]:
-            meta = state["positions_meta"].get(asset,{})
+            meta = state["positions_meta"].get(asset, {})
             did_skip = meta.get("did_skip_sell_once", False)
             entry_px = meta.get("entry_px", None)
 
-            current_px= bexec.get_symbol_price(asset)
-            if entry_px and entry_px>0:
+            current_px = bexec.get_symbol_price(asset)
+            if entry_px and entry_px > 0:
                 ratio = current_px / entry_px
+                # big_gain_exception_pct => on skip 1 fois la vente
                 if ratio >= strat["big_gain_exception_pct"] and not did_skip:
                     meta["did_skip_sell_once"] = True
                     state["positions_meta"][asset] = meta
@@ -136,12 +141,12 @@ def daily_update_live(state, config, bexec):
     buy_candidates = buy_candidates[:5]
     logging.info(f"[DAILY BUY SELECT] => {buy_candidates}")
 
-    if buy_candidates and usdt_balance>10:
+    if buy_candidates and usdt_balance > 10:
         alloc = usdt_balance / len(buy_candidates)
         for sym, pb in buy_candidates:
             qty_bought, avg_px = bexec.buy(sym, alloc)
             logging.info(f"[DAILY BUY EXEC] => {sym}, qty={qty_bought}, px={avg_px:.4f}")
-            if qty_bought>0:
+            if qty_bought > 0:
                 state["positions_meta"][sym] = {
                     "entry_px": avg_px,
                     "did_skip_sell_once": False,
@@ -153,6 +158,9 @@ def daily_update_live(state, config, bexec):
 
     logging.info("[DAILY UPDATE] Done daily_update_live")
 
+########################################
+# MAIN
+########################################
 def main():
     if not os.path.exists("config.yaml"):
         print("[ERREUR] config.yaml introuvable.")
@@ -169,15 +177,18 @@ def main():
     )
     logging.info("[MAIN] Starting main loop (LIVE).")
 
+    # Chargement du state
     state = load_state()
     logging.info(f"[MAIN] Loaded state => keys={list(state.keys())}")
 
+    # Initialisation Binance
     bexec = TradeExecutor(
         api_key=config["binance_api"]["api_key"],
         api_secret=config["binance_api"]["api_secret"]
     )
     logging.info("[MAIN] TradeExecutor initialized.")
 
+    # Fuseau pour heure Paris
     paris_tz = pytz.timezone("Europe/Paris")
 
     while True:
@@ -186,28 +197,27 @@ def main():
             hour_p = now_paris.hour
             min_p  = now_paris.minute
 
-            # Auto-select => 12h30
-            if hour_p == 12 and min_p == 30 and not state.get("did_auto_select_today", False):
+            # 1) auto_select => 14h30
+            if hour_p == 14 and min_p == 30 and not state.get("did_auto_select_today", False):
                 run_auto_select_once_per_day(state)
 
-            # daily => 13h00 => data_fetcher / ml_decision / daily_update
-            if hour_p == 13 and min_p == 0 and not state.get("did_daily_update_today", False):
-                logging.info("[MAIN] 13h00 => daily_update_live.")
+            # 2) daily => 14h45 => data_fetcher / ml_decision / daily_update
+            if hour_p == 14 and min_p == 45 and not state.get("did_daily_update_today", False):
+                logging.info("[MAIN] 14h45 => daily_update_live.")
                 daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today => True.")
 
-            # Si on n'est plus à l'heure 12/13 => reset flags
-            # (vous pouvez ajuster le reset si besoin, ex: on reset seulement si day change, etc.)
-            if hour_p not in [12, 13]:
-                if state.get("did_daily_update_today", False):
-                    logging.info("[MAIN] reset daily_update_today.")
-                state["did_daily_update_today"] = False
-
+            # 3) Reset flags si on n'est plus dans l'heure 14
+            if hour_p != 14:
                 if state.get("did_auto_select_today", False):
                     logging.info("[MAIN] reset did_auto_select_today.")
                 state["did_auto_select_today"] = False
+
+                if state.get("did_daily_update_today", False):
+                    logging.info("[MAIN] reset daily_update_today.")
+                state["did_daily_update_today"] = False
 
                 save_state(state)
 
@@ -224,6 +234,7 @@ def main():
             logging.error(f"[MAIN ERROR] {e}")
 
         time.sleep(10)
+
 
 if __name__=="__main__":
     main()
