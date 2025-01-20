@@ -28,7 +28,7 @@ LOG_FILE       = "data_fetcher.log"
 OUTPUT_INFERENCE_CSV = "daily_inference_data.csv"
 
 LUNAR_API_KEY  = CONFIG["lunarcrush"]["api_key"]
-LOOKBACK_DAYS  = 60
+LOOKBACK_DAYS  = 365
 SLEEP_BETWEEN_TOKENS = 12
 
 logging.basicConfig(
