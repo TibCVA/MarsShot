@@ -7,17 +7,16 @@ import numpy as np
 import pandas as pd
 import joblib
 
-#######################################
-# Construction chemins absolus
-#######################################
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-MODEL_FILE         = os.path.join(CURRENT_DIR, "..", "model.pkl")
-INPUT_CSV          = os.path.join(CURRENT_DIR, "..", "daily_inference_data.csv")
-OUTPUT_PROBA_CSV   = os.path.join(CURRENT_DIR, "..", "daily_probabilities.csv")
-LOG_FILE           = "ml_decision.log"
+# On part du principe que "model.pkl" est dans modules/ (cf. votre capture)
+MODEL_FILE        = os.path.join(CURRENT_DIR, "model.pkl")
 
-# Même jeu de features que dans train_model_optuna
+# Les CSV sont dans le dossier racine (../)
+INPUT_CSV         = os.path.join(CURRENT_DIR, "..", "daily_inference_data.csv")
+OUTPUT_PROBA_CSV  = os.path.join(CURRENT_DIR, "..", "daily_probabilities.csv")
+LOG_FILE          = "ml_decision.log"
+
 COLUMNS_ORDER = [
     "delta_close_1d","delta_close_3d","delta_vol_1d","delta_vol_3d",
     "rsi14","rsi30","ma_close_7d","ma_close_14d","atr14","macd_std",
@@ -27,8 +26,7 @@ COLUMNS_ORDER = [
     "delta_mcap_1d","delta_mcap_3d",
     "galaxy_score","delta_galaxy_score_3d",
     "alt_rank","delta_alt_rank_3d",
-    "sentiment",
-    "social_dominance","market_dominance",
+    "sentiment","social_dominance","market_dominance",
     "delta_social_dom_3d","delta_market_dom_3d"
 ]
 
@@ -41,7 +39,6 @@ logging.basicConfig(
 logging.info("=== START ml_decision (BATCH) ===")
 
 def main():
-    logging.info("[ML_DECISION] current working dir = %s", os.getcwd())
     logging.info(f"[ML_DECISION] Checking model file => {MODEL_FILE}")
     if not os.path.exists(MODEL_FILE):
         msg = f"[ERROR] {MODEL_FILE} introuvable => impossible de prédire."
@@ -56,7 +53,7 @@ def main():
         print(msg)
         return
 
-    # Chargement du modèle (pipeline, threshold) ou juste pipeline
+    # Chargement du pipeline + threshold
     loaded = joblib.load(MODEL_FILE)
     if isinstance(loaded, tuple):
         model, custom_threshold = loaded
@@ -84,7 +81,7 @@ def main():
     df.dropna(subset=COLUMNS_ORDER, inplace=True)
     after = len(df)
     if after < before:
-        logging.warning(f"[WARN] Drop {before - after} lignes => NaN dans features.")
+        logging.warning(f"[WARN] Drop {before-after} lignes => NaN dans features.")
 
     if df.empty:
         msg = "[WARN] plus aucune ligne => impossible de prédire."
@@ -92,17 +89,14 @@ def main():
         print(msg)
         return
 
-    logging.info(f"[ML_DECISION] => df.shape après dropna={df.shape}")
     X = df[COLUMNS_ORDER].values.astype(float)
-
-    logging.info(f"[ML_DECISION] => predict_proba sur X.shape={X.shape}")
     probs = model.predict_proba(X)
     prob_1 = probs[:,1]
 
     out_rows = []
     for i, row in df.iterrows():
         sym = row["symbol"]
-        p   = prob_1[i]
+        p = prob_1[i]
         out_rows.append([sym, p])
 
     df_out = pd.DataFrame(out_rows, columns=["symbol","prob"])
@@ -114,6 +108,7 @@ def main():
     print(f"[OK] daily_probabilities.csv => {len(df_out)} tokens.")
 
     logging.info("=== END ml_decision (BATCH) ===")
+
 
 if __name__=="__main__":
     main()
