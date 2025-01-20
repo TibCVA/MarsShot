@@ -39,10 +39,11 @@ def run_auto_select_once_per_day(state):
     Si non, on exécute le script, puis on met à jour le state pour ne pas relancer.
     """
     if state.get("did_auto_select_today", False):
-        return  # déjà fait
+        return  # déjà fait ce jour
 
     logging.info("[MAIN] => auto_select_tokens.py => start")
     try:
+        # Lancement du script auto_select_tokens.py
         subprocess.run(["python", "auto_select_tokens.py"], check=False)
         state["did_auto_select_today"] = True
         save_state(state)
@@ -114,7 +115,7 @@ def daily_update_live(state, config, bexec):
 
             if entry_px and entry_px > 0:
                 ratio = current_px / entry_px
-                # big_gain_exception_pct => on skip 1 fois la vente
+                # big_gain_exception_pct => on skip la vente 1 fois si on est au-dessus
                 if ratio >= strat["big_gain_exception_pct"] and not did_skip:
                     meta["did_skip_sell_once"] = True
                     state["positions_meta"][asset] = meta
@@ -197,19 +198,19 @@ def main():
             hour_p = now_paris.hour
             min_p  = now_paris.minute
 
-            # 1) auto_select => 21h30
-            if hour_p == 21 and min_p == 30 and not state.get("did_auto_select_today", False):
+            # 1) auto_select => 21h40
+            if hour_p == 21 and min_p == 40 and not state.get("did_auto_select_today", False):
                 run_auto_select_once_per_day(state)
 
-            # 2) daily => 21h40 => data_fetcher / ml_decision / daily_update
-            if hour_p == 21 and min_p == 40 and not state.get("did_daily_update_today", False):
-                logging.info("[MAIN] 21h40 => daily_update_live.")
+            # 2) daily => 21h50
+            if hour_p == 21 and min_p == 50 and not state.get("did_daily_update_today", False):
+                logging.info("[MAIN] 21h50 => daily_update_live.")
                 daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today => True.")
 
-            # 3) Reset flags hors de 21h
+            # 3) Reset flags si on n'est plus dans l'heure 21
             if hour_p != 21:
                 if state.get("did_auto_select_today", False):
                     logging.info("[MAIN] reset did_auto_select_today.")
@@ -221,7 +222,7 @@ def main():
 
                 save_state(state)
 
-            # Intraday check => toutes X secondes
+            # 4) Intraday check => toutes X secondes
             last_check = state.get("last_risk_check_ts", 0)
             elapsed = time.time() - last_check
             if elapsed >= config["strategy"]["check_interval_seconds"]:
