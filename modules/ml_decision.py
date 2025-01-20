@@ -7,13 +7,17 @@ import numpy as np
 import pandas as pd
 import joblib
 
-MODEL_FILE = "model.pkl"
-INPUT_CSV  = "daily_inference_data.csv"
-OUTPUT_PROBA_CSV = "daily_probabilities.csv"
-LOG_FILE   = "ml_decision.log"
+#######################################
+# Construction chemins absolus
+#######################################
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Même jeu de features qu'au final de build_csv/train_model_optuna,
-# en retirant 'volatility_24h' et 'delta_volatility_3d'.
+MODEL_FILE         = os.path.join(CURRENT_DIR, "..", "model.pkl")
+INPUT_CSV          = os.path.join(CURRENT_DIR, "..", "daily_inference_data.csv")
+OUTPUT_PROBA_CSV   = os.path.join(CURRENT_DIR, "..", "daily_probabilities.csv")
+LOG_FILE           = "ml_decision.log"
+
+# Même jeu de features que dans train_model_optuna
 COLUMNS_ORDER = [
     "delta_close_1d","delta_close_3d","delta_vol_1d","delta_vol_3d",
     "rsi14","rsi30","ma_close_7d","ma_close_14d","atr14","macd_std",
@@ -61,7 +65,6 @@ def main():
         model = loaded
         custom_threshold = None
 
-    logging.info(f"[ML_DECISION] Lecture du CSV => {INPUT_CSV}")
     df = pd.read_csv(INPUT_CSV)
     if df.empty:
         msg = "[WARN] daily_inference_data.csv est vide => aucune prédiction possible."
@@ -81,7 +84,7 @@ def main():
     df.dropna(subset=COLUMNS_ORDER, inplace=True)
     after = len(df)
     if after < before:
-        logging.warning(f"[WARN] Drop {before - after} lignes => NaN dans features. (Possible data incomplete)")
+        logging.warning(f"[WARN] Drop {before - after} lignes => NaN dans features.")
 
     if df.empty:
         msg = "[WARN] plus aucune ligne => impossible de prédire."
@@ -90,10 +93,9 @@ def main():
         return
 
     logging.info(f"[ML_DECISION] => df.shape après dropna={df.shape}")
-
     X = df[COLUMNS_ORDER].values.astype(float)
-    logging.info(f"[ML_DECISION] => predict_proba sur X.shape={X.shape}")
 
+    logging.info(f"[ML_DECISION] => predict_proba sur X.shape={X.shape}")
     probs = model.predict_proba(X)
     prob_1 = probs[:,1]
 
