@@ -7,14 +7,13 @@ import yaml
 
 from modules.trade_executor import TradeExecutor
 
-# On récupère le chemin vers config.yaml
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(CURRENT_DIR, "config.yaml")
 
 if not os.path.exists(CONFIG_FILE):
-    raise FileNotFoundError(f"[ERREUR] config.yaml introuvable.")
+    raise FileNotFoundError("[ERREUR] config.yaml introuvable (dashboard).")
 
-with open(CONFIG_FILE, "r") as f:
+with open(CONFIG_FILE,"r") as f:
     CONFIG = yaml.safe_load(f)
 
 BINANCE_KEY    = CONFIG["binance_api"]["api_key"]
@@ -35,21 +34,21 @@ def get_portfolio_state():
         asset= b["asset"]
         free= float(b["free"])
         locked= float(b["locked"])
-        qty= free+ locked
-        if qty<=0: 
+        qty= free + locked
+        if qty<=0:
             continue
-
+        # Conversion en USDT
         if asset.upper()=="USDT":
-            val_usdt= qty
+            val_usdt = qty
         else:
-            px= bexec.get_symbol_price(asset)
-            val_usdt= px* qty
+            px = bexec.get_symbol_price(asset)
+            val_usdt = px* qty
         positions.append({
             "symbol": asset,
             "qty": round(qty,4),
             "value_usdt": round(val_usdt,2)
         })
-        total_val+= val_usdt
+        total_val += val_usdt
 
     return {
         "positions": positions,
@@ -57,28 +56,27 @@ def get_portfolio_state():
     }
 
 def list_tokens_tracked():
-    # On retourne la liste "tokens_daily" du config.yaml
+    # On affiche ce qui est dans tokens_daily
     return CONFIG["tokens_daily"]
 
 def get_performance_history():
-    # Ex. renvoyer des placeholders
-    pf= get_portfolio_state()
-    tv= pf["total_value_usdt"]
+    # Placeholder
+    pf = get_portfolio_state()
+    tv = pf["total_value_usdt"]
     return {
-      "1d":{"usdt": 0.0,  "pct":0.0},
-      "7d":{"usdt": 0.0,  "pct":0.0},
-      "1m":{"usdt": 0.0,  "pct":0.0},
-      "3m":{"usdt": 0.0,  "pct":0.0},
-      "1y":{"usdt": 0.0,  "pct":0.0},
-      "all":{"usdt": tv, "pct":0.0}
+      "1d":{"usdt":0.0,"pct":0.0},
+      "7d":{"usdt":0.0,"pct":0.0},
+      "1m":{"usdt":0.0,"pct":0.0},
+      "3m":{"usdt":0.0,"pct":0.0},
+      "1y":{"usdt":0.0,"pct":0.0},
+      "all":{"usdt":tv,"pct":0.0}
     }
 
 def get_trades_history():
-    # TODO : log de vos trades si vous en avez
     return []
 
 def emergency_out():
-    bexec= TradeExecutor(BINANCE_KEY,BINANCE_SECRET)
+    bexec = TradeExecutor(BINANCE_KEY, BINANCE_SECRET)
     info= bexec.client.get_account()
     for b in info["balances"]:
         asset= b["asset"]
