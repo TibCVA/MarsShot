@@ -23,32 +23,29 @@ logging.basicConfig(level=logging.INFO)
 
 def get_portfolio_state():
     bexec = TradeExecutor(BINANCE_KEY, BINANCE_SECRET)
-    client= bexec.client
-    info= client.get_account()
-    bals= info["balances"]
-
+    info  = bexec.client.get_account()
+    bals  = info["balances"]
     positions=[]
-    total_val= 0.0
+    total_val=0.0
 
     for b in bals:
         asset= b["asset"]
         free= float(b["free"])
         locked= float(b["locked"])
-        qty= free + locked
+        qty= free+locked
         if qty<=0:
             continue
-        # Conversion en USDT
         if asset.upper()=="USDT":
-            val_usdt = qty
+            val_usdt= qty
         else:
-            px = bexec.get_symbol_price(asset)
-            val_usdt = px* qty
+            px= bexec.get_symbol_price(asset)
+            val_usdt= px* qty
         positions.append({
             "symbol": asset,
             "qty": round(qty,4),
             "value_usdt": round(val_usdt,2)
         })
-        total_val += val_usdt
+        total_val+= val_usdt
 
     return {
         "positions": positions,
@@ -56,13 +53,11 @@ def get_portfolio_state():
     }
 
 def list_tokens_tracked():
-    # On affiche ce qui est dans tokens_daily
     return CONFIG["tokens_daily"]
 
 def get_performance_history():
-    # Placeholder
-    pf = get_portfolio_state()
-    tv = pf["total_value_usdt"]
+    pf= get_portfolio_state()
+    tv= pf["total_value_usdt"]
     return {
       "1d":{"usdt":0.0,"pct":0.0},
       "7d":{"usdt":0.0,"pct":0.0},
@@ -76,7 +71,7 @@ def get_trades_history():
     return []
 
 def emergency_out():
-    bexec = TradeExecutor(BINANCE_KEY, BINANCE_SECRET)
+    bexec= TradeExecutor(BINANCE_KEY,BINANCE_SECRET)
     info= bexec.client.get_account()
     for b in info["balances"]:
         asset= b["asset"]
