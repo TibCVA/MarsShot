@@ -198,20 +198,20 @@ def main():
             hour_p = now_paris.hour
             min_p  = now_paris.minute
 
-            # 1) auto_select => 15h30
-            if hour_p == 15 and min_p == 30 and not state.get("did_auto_select_today", False):
+            # 1) auto_select => 16h45
+            if hour_p == 16 and min_p == 45 and not state.get("did_auto_select_today", False):
                 run_auto_select_once_per_day(state)
 
-            # 2) daily => 15h40 => data_fetcher / ml_decision / daily_update
-            if hour_p == 15 and min_p == 40 and not state.get("did_daily_update_today", False):
-                logging.info("[MAIN] 15h40 => daily_update_live.")
+            # 2) daily => 16h55 => data_fetcher / ml_decision / daily_update
+            if hour_p == 16 and min_p == 55 and not state.get("did_daily_update_today", False):
+                logging.info("[MAIN] 16h55 => daily_update_live.")
                 daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today => True.")
 
-            # 3) Reset flags si on n'est plus dans l'heure 15
-            if hour_p != 15:
+            # 3) Reset flags si on n'est plus dans l'heure 16
+            if hour_p != 16:
                 if state.get("did_auto_select_today", False):
                     logging.info("[MAIN] reset did_auto_select_today.")
                 state["did_auto_select_today"] = False
@@ -237,5 +237,5 @@ def main():
         time.sleep(10)
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
