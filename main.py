@@ -43,7 +43,7 @@ def run_auto_select_once_per_day(state):
 
     logging.info("[MAIN] => auto_select_tokens.py => start")
     try:
-        # On exécute le script
+        # Lancement du script auto_select_tokens.py
         subprocess.run(["python", "auto_select_tokens.py"], check=False)
         state["did_auto_select_today"] = True
         save_state(state)
@@ -53,28 +53,28 @@ def run_auto_select_once_per_day(state):
 
 def daily_update_live(state, config, bexec):
     """
-    Exécute le data_fetcher.py + ml_decision.py, puis la logique SELL/BUY 'daily'
+    Exécute le data_fetcher + ml_decision, puis la logique SELL/BUY 'daily'
     """
     logging.info("[DAILY UPDATE] Start daily_update_live")
 
     # 1) data_fetcher
     try:
-        logging.info("[DAILY UPDATE] data_fetcher.py => daily_inference_data.csv")
-        subprocess.run(["python", "data_fetcher.py"], check=False)
+        logging.info("[DAILY UPDATE] => modules/data_fetcher.py")
+        subprocess.run(["python", "modules/data_fetcher.py"], check=False)
     except Exception as e:
         logging.error(f"[DAILY UPDATE] data_fetcher => {e}")
 
     # 2) ml_decision
     try:
-        logging.info("[DAILY UPDATE] ml_decision.py => daily_probabilities.csv")
-        subprocess.run(["python", "ml_decision.py"], check=False)
+        logging.info("[DAILY UPDATE] => modules/ml_decision.py")
+        subprocess.run(["python", "modules/ml_decision.py"], check=False)
     except Exception as e:
         logging.error(f"[DAILY UPDATE] ml_decision => {e}")
 
     # 3) Chargement probas
     prob_map = load_probabilities_csv("daily_probabilities.csv")
-    tokens = config["tokens_daily"]
-    strat  = config["strategy"]
+    tokens   = config["tokens_daily"]
+    strat    = config["strategy"]
     logging.info(f"[DAILY UPDATE] tokens_daily={tokens}")
 
     # 4) Récup solde compte
@@ -88,10 +88,10 @@ def daily_update_live(state, config, bexec):
     holdings = {}
     usdt_balance = 0.0
     for b in balances:
-        asset = b["asset"]
-        free  = float(b["free"])
-        locked= float(b["locked"])
-        qty   = free + locked
+        asset  = b["asset"]
+        free   = float(b["free"])
+        locked = float(b["locked"])
+        qty    = free + locked
         if asset.upper() == "USDT":
             usdt_balance = qty
         elif qty > 0:
@@ -106,12 +106,13 @@ def daily_update_live(state, config, bexec):
         if prob is None:
             logging.info(f"[DAILY SELL] {asset} => prob=None => skip.")
             continue
-        if prob < strat["sell_threshold"]:
-            meta = state["positions_meta"].get(asset, {})
-            did_skip = meta.get("did_skip_sell_once", False)
-            entry_px = meta.get("entry_px", None)
 
-            current_px = bexec.get_symbol_price(asset)
+        if prob < strat["sell_threshold"]:
+            meta      = state["positions_meta"].get(asset, {})
+            did_skip  = meta.get("did_skip_sell_once", False)
+            entry_px  = meta.get("entry_px", None)
+            current_px= bexec.get_symbol_price(asset)
+
             if entry_px and entry_px > 0:
                 ratio = current_px / entry_px
                 # big_gain_exception_pct => on skip 1 fois la vente
@@ -158,7 +159,6 @@ def daily_update_live(state, config, bexec):
 
     logging.info("[DAILY UPDATE] Done daily_update_live")
 
-
 ########################################
 # MAIN
 ########################################
@@ -198,20 +198,20 @@ def main():
             hour_p = now_paris.hour
             min_p  = now_paris.minute
 
-            # 1) auto_select => 16h45
-            if hour_p == 16 and min_p == 45 and not state.get("did_auto_select_today", False):
+            # 1) auto_select => 20h15
+            if hour_p == 20 and min_p == 15 and not state.get("did_auto_select_today", False):
                 run_auto_select_once_per_day(state)
 
-            # 2) daily => 16h55 => data_fetcher / ml_decision / daily_update
-            if hour_p == 16 and min_p == 55 and not state.get("did_daily_update_today", False):
-                logging.info("[MAIN] 16h55 => daily_update_live.")
+            # 2) daily => 20h25 => data_fetcher / ml_decision / daily_update
+            if hour_p == 20 and min_p == 25 and not state.get("did_daily_update_today", False):
+                logging.info("[MAIN] 20h25 => daily_update_live.")
                 daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today => True.")
 
-            # 3) Reset flags si on n'est plus dans l'heure 16
-            if hour_p != 16:
+            # 3) Reset flags si on n'est plus dans l'heure 20
+            if hour_p != 20:
                 if state.get("did_auto_select_today", False):
                     logging.info("[MAIN] reset did_auto_select_today.")
                 state["did_auto_select_today"] = False
@@ -235,7 +235,6 @@ def main():
             logging.error(f"[MAIN ERROR] {e}")
 
         time.sleep(10)
-
 
 if __name__ == "__main__":
     main()
