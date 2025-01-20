@@ -115,7 +115,7 @@ def daily_update_live(state, config, bexec):
 
             if entry_px and entry_px > 0:
                 ratio = current_px / entry_px
-                # big_gain_exception_pct => on skip la vente 1 fois si on est au-dessus
+                # big_gain_exception_pct => on skip la vente 1 fois si on dépasse
                 if ratio >= strat["big_gain_exception_pct"] and not did_skip:
                     meta["did_skip_sell_once"] = True
                     state["positions_meta"][asset] = meta
@@ -198,20 +198,20 @@ def main():
             hour_p = now_paris.hour
             min_p  = now_paris.minute
 
-            # 1) auto_select => 21h40
-            if hour_p == 21 and min_p == 40 and not state.get("did_auto_select_today", False):
+            # 1) auto_select => 22h25
+            if hour_p == 22 and min_p == 25 and not state.get("did_auto_select_today", False):
                 run_auto_select_once_per_day(state)
 
-            # 2) daily => 21h50
-            if hour_p == 21 and min_p == 50 and not state.get("did_daily_update_today", False):
-                logging.info("[MAIN] 21h50 => daily_update_live.")
+            # 2) daily => 22h35
+            if hour_p == 22 and min_p == 35 and not state.get("did_daily_update_today", False):
+                logging.info("[MAIN] 22h35 => daily_update_live.")
                 daily_update_live(state, config, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today => True.")
 
-            # 3) Reset flags si on n'est plus dans l'heure 21
-            if hour_p != 21:
+            # 3) Reset flags si on n'est plus dans l'heure 22
+            if hour_p != 22:
                 if state.get("did_auto_select_today", False):
                     logging.info("[MAIN] reset did_auto_select_today.")
                 state["did_auto_select_today"] = False
