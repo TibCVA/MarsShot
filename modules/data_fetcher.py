@@ -14,14 +14,10 @@ from typing import Optional
 from binance.client import Client
 from indicators import compute_indicators_extended
 
-######################################
-# Ajuster les chemins
-######################################
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# On part du principe que "config.yaml" est à la racine de MarsShot
+# On pointe vers la racine : ../config.yaml
 CONFIG_FILE = os.path.join(CURRENT_DIR, "..", "config.yaml")
-# On écrit le CSV au même niveau que config.yaml
 OUTPUT_INFERENCE_CSV = os.path.join(CURRENT_DIR, "..", "daily_inference_data.csv")
 
 LOG_FILE = "data_fetcher.log"
@@ -48,7 +44,7 @@ logging.basicConfig(
 )
 logging.info("=== START data_fetcher => daily_inference_data.csv ===")
 
-def fetch_lunar_data_inference(symbol: str, lookback_days=LOOKBACK_DAYS) -> Optional[pd.DataFrame]:
+def fetch_lunar_data_inference(symbol: str, lookback_days=365) -> Optional[pd.DataFrame]:
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=lookback_days)
     start_ts = int(start_date.timestamp())
@@ -61,7 +57,7 @@ def fetch_lunar_data_inference(symbol: str, lookback_days=LOOKBACK_DAYS) -> Opti
         "start": start_ts,
         "end":   end_ts
     }
-    logging.info(f"[LUNAR INF] => symbol={symbol}, lookback_days={lookback_days}")
+    logging.info(f"[LUNAR INF] => symbol={symbol}, lookback={lookback_days}")
 
     max_retries = 3
     df_out = None
@@ -90,11 +86,9 @@ def fetch_lunar_data_inference(symbol: str, lookback_days=LOOKBACK_DAYS) -> Opti
                         gal = pt.get("galaxy_score", 0)
                         alt_= pt.get("alt_rank", 0)
                         senti= pt.get("sentiment", 0)
-                        soc_dom= pt.get("social_dominance", 0)
-                        mkt_dom= pt.get("market_dominance", 0)
-                        rows.append([
-                            dt_utc,o,c,hi,lo,vol,mc,gal,alt_,senti,soc_dom,mkt_dom
-                        ])
+                        soc= pt.get("social_dominance", 0)
+                        dom= pt.get("market_dominance", 0)
+                        rows.append([dt_utc,o,c,hi,lo,vol,mc,gal,alt_,senti,soc,dom])
                     if rows:
                         df_out = pd.DataFrame(rows, columns=[
                             "date","open","close","high","low","volume","market_cap",
@@ -111,11 +105,10 @@ def fetch_lunar_data_inference(symbol: str, lookback_days=LOOKBACK_DAYS) -> Opti
                 break
         except Exception as e:
             logging.error(f"[ERROR INF] => {symbol} => {e}", exc_info=True)
-            wait_s = 30*(attempt+1)
-            time.sleep(wait_s)
+            time.sleep(10)
 
     if df_out is None or df_out.empty:
-        logging.warning(f"[LUNAR INF] {symbol} => df_out is None/empty => None")
+        logging.warning(f"[LUNAR INF] {symbol} => no data => None")
         return None
 
     df_out.sort_values("date", inplace=True)
@@ -128,7 +121,7 @@ def main():
     logging.info(f"[DATA_FETCHER] config.yaml => {CONFIG_FILE}")
     logging.info(f"[DATA_FETCHER] TOKENS_DAILY => {TOKENS_DAILY}")
 
-    # Merge BTC/ETH
+    # On récup BTC/ETH pour merges
     df_btc = fetch_lunar_data_inference("BTC", LOOKBACK_DAYS) or pd.DataFrame(columns=["date","close"])
     df_eth = fetch_lunar_data_inference("ETH", LOOKBACK_DAYS) or pd.DataFrame(columns=["date","close"])
 
@@ -143,18 +136,12 @@ def main():
             logging.warning(f"[SKIP INF] => {sym}")
             continue
 
-        # Convert to numeric
-        for c_ in [
-            "open","close","high","low","volume","market_cap",
-            "galaxy_score","alt_rank","sentiment",
-            "social_dominance","market_dominance"
-        ]:
-            if c_ in df_.columns:
-                df_[c_] = pd.to_numeric(df_[c_], errors="coerce")
-            else:
-                df_[c_] = 0.0
+        # Indicateurs
+        for c_ in ["open","close","high","low","volume","market_cap",
+                   "galaxy_score","alt_rank","sentiment",
+                   "social_dominance","market_dominance"]:
+            df_[c_] = pd.to_numeric(df_[c_], errors="coerce")
 
-        # Indicators
         dfi = compute_indicators_extended(df_)
         dfi.sort_values("date", inplace=True)
         dfi.reset_index(drop=True, inplace=True)
