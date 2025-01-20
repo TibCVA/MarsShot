@@ -23,7 +23,8 @@ with open(CONFIG_FILE, "r") as f:
 
 BINANCE_KEY    = CONFIG["binance_api"]["api_key"]
 BINANCE_SECRET = CONFIG["binance_api"]["api_secret"]
-TOKENS_DAILY   = CONFIG["tokens_daily"]  # c'est la liste potentiellement auto-sélectionnée
+TOKENS_DAILY   = CONFIG["tokens_daily"]  # liste potentiellement mise à jour par auto_select_tokens.py
+
 LOG_FILE       = "data_fetcher.log"
 OUTPUT_INFERENCE_CSV = "daily_inference_data.csv"
 
@@ -39,8 +40,12 @@ logging.basicConfig(
 )
 logging.info("=== START data_fetcher => daily_inference_data.csv ===")
 
-
 def fetch_lunar_data_inference(symbol: str, lookback_days=LOOKBACK_DAYS) -> Optional[pd.DataFrame]:
+    """
+    Récupère sur ~lookback_days de données journalières (bucket=day)
+    via l'API v2 de LunarCrush. Gère quelques status code (429, 502, 530) avec retry exponentiel.
+    Retourne un DataFrame ou None si échec/données vides.
+    """
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=lookback_days)
     start_ts = int(start_date.timestamp())
@@ -63,6 +68,7 @@ def fetch_lunar_data_inference(symbol: str, lookback_days=LOOKBACK_DAYS) -> Opti
             r = requests.get(url, params=params, timeout=30)
             code = r.status_code
             logging.info(f"[LUNAR INF] {symbol} => code={code}, attempt={attempt+1}/{max_retries}, url={r.url}")
+
             if code == 200:
                 txt_len = len(r.text)
                 logging.info(f"[LUNAR INF] {symbol} => 200 OK. response length={txt_len}")
@@ -101,7 +107,6 @@ def fetch_lunar_data_inference(symbol: str, lookback_days=LOOKBACK_DAYS) -> Opti
                 break
 
             elif code in (429, 502, 530):
-                # On logge le début de la réponse pour info
                 wait_s = 30*(attempt+1)
                 logging.warning(
                     f"[WARN INF] {symbol} => code={code}, response={r.text[:150]}, wait {wait_s}s => retry"
@@ -128,7 +133,6 @@ def fetch_lunar_data_inference(symbol: str, lookback_days=LOOKBACK_DAYS) -> Opti
     df_out.reset_index(drop=True, inplace=True)
     return df_out
 
-
 def main():
     logging.info("=== START data_fetcher => daily_inference_data.csv ===")
     logging.info(f"[DATA_FETCHER] current working dir = {os.getcwd()}")
@@ -136,7 +140,7 @@ def main():
     logging.info(f"[DATA_FETCHER] LUNAR_API_KEY length = {len(LUNAR_API_KEY)}")
     logging.info(f"[DATA_FETCHER] TOKENS_DAILY => {TOKENS_DAILY}")
 
-    # Récup BTC/ETH
+    # Récup BTC/ETH (pour les merges)
     df_btc = fetch_lunar_data_inference("BTC", LOOKBACK_DAYS)
     if df_btc is None:
         df_btc = pd.DataFrame(columns=["date","close"])
@@ -168,16 +172,19 @@ def main():
                 else:
                     df_[c_] = 0.0
 
+            # Calcul des indicateurs
             dfi = compute_indicators_extended(df_)
             dfi.sort_values("date", inplace=True)
             dfi.reset_index(drop=True, inplace=True)
 
+            # Remplissage de NaN sur colonnes lune/social
             for cc in [
                 "galaxy_score","alt_rank","sentiment","market_cap",
                 "social_dominance","market_dominance"
             ]:
                 dfi[cc] = dfi[cc].fillna(0)
 
+            # Deltas
             dfi["delta_close_1d"] = dfi["close"].pct_change(1)
             dfi["delta_close_3d"] = dfi["close"].pct_change(3)
 
@@ -250,6 +257,7 @@ def main():
 
     if not all_dfs:
         logging.warning("[WARN] => no data => empty daily_inference_data.csv")
+        # On se base sur la liste needed_cols pour un CSV minimal
         df_empty = pd.DataFrame(columns=needed_cols)
         df_empty.to_csv(OUTPUT_INFERENCE_CSV, index=False)
         print(f"[WARN] => empty {OUTPUT_INFERENCE_CSV}")
