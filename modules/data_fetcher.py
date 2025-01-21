@@ -78,10 +78,8 @@ SLEEP_BETWEEN_TOKENS = 2
 def fetch_lunar_data_inference(symbol: str, lookback_days:int=365) -> Optional[pd.DataFrame]:
     """
     Récupère ~lookback_days de données journalières sur LunarCrush pour 'symbol'.
-    Gère code HTTP != 200 => skip, partial.
-    Logue en détail le code, la taille data_pts, exceptions, etc.
+    Gère code HTTP != 200 => skip partiel, et log détaillé.
     """
-
     if not LUNAR_API_KEY:
         logging.warning(f"[{symbol}] No LUNAR_API_KEY => skip.")
         return None
@@ -146,7 +144,7 @@ def fetch_lunar_data_inference(symbol: str, lookback_days:int=365) -> Optional[p
                     "galaxy_score","alt_rank","sentiment","social_dominance","market_dominance"
                 ])
                 df_out = df_tmp
-                break  # on sort de la boucle des retries
+                break  # on sort de la boucle de retry
 
             elif code in [429,502,530]:
                 wait_s = 30*(attempt+1)
@@ -179,117 +177,121 @@ def fetch_lunar_data_inference(symbol: str, lookback_days:int=365) -> Optional[p
 def main():
     logging.info("=== START data_fetcher => daily_inference_data.csv ===")
     logging.info(f"[DATA_FETCHER] config.yaml => {CONFIG_FILE}")
+    logging.info("[DATA_FETCHER] => final tokens list => %s", TOKENS_DAILY)
 
-    if TOKENS_DAILY:
-        logging.info(f"[DATA_FETCHER] => final tokens list => {TOKENS_DAILY}")
-    else:
+    # Si TOKENS_DAILY vide => CSV vide
+    if not TOKENS_DAILY:
         logging.warning("[DATA_FETCHER] => tokens list is empty => produce empty CSV.")
         pd.DataFrame().to_csv(OUTPUT_INFERENCE_CSV, index=False)
         print(f"[WARN] => empty => {OUTPUT_INFERENCE_CSV}")
         return
 
     # (optionnel) fetch BTC/ETH => pour merge
+    logging.info("[DEBUG] Starting fetch for BTC reference ...")
     df_btc = fetch_lunar_data_inference("BTC", lookback_days=LOOKBACK_DAYS) or pd.DataFrame(columns=["date","close"])
-    if not df_btc.empty:
-        logging.info(f"[DATA_FETCHER] BTC => final shape={df_btc.shape}")
+    logging.info(f"[DEBUG] df_btc => shape={df_btc.shape}, now fetch ETH ...")
     df_eth = fetch_lunar_data_inference("ETH", lookback_days=LOOKBACK_DAYS) or pd.DataFrame(columns=["date","close"])
-    if not df_eth.empty:
-        logging.info(f"[DATA_FETCHER] ETH => final shape={df_eth.shape}")
+    logging.info(f"[DEBUG] df_eth => shape={df_eth.shape}, now let's fetch tokens in TOKENS_DAILY")
 
     all_dfs = []
     nb = len(TOKENS_DAILY)
-    logging.info(f"[DATA_FETCHER] We'll fetch {nb} tokens in detail now.")
+    logging.info(f"[DATA_FETCHER] We'll fetch {nb} tokens from the final list now.")
 
-    for i, sym in enumerate(TOKENS_DAILY, start=1):
-        logging.info(f"[TOKEN {i}/{nb}] => {sym}")
-        df_ = fetch_lunar_data_inference(sym, lookback_days=LOOKBACK_DAYS)
-        if df_ is None or df_.empty:
-            logging.warning(f"[SKIP] => {sym}, got None/empty => partial continue.")
-            continue
+    try:
+        for i, sym in enumerate(TOKENS_DAILY, start=1):
+            logging.info(f"[TOKEN {i}/{nb}] => {sym} => fetch_lunar_data_inference")
+            df_ = fetch_lunar_data_inference(sym, lookback_days=LOOKBACK_DAYS)
+            if df_ is None or df_.empty:
+                logging.warning(f"[SKIP] => {sym}, got None/empty => partial continue.")
+                continue
 
-        # Convert to numeric
-        for c_ in [
-            "open","close","high","low","volume","market_cap",
-            "galaxy_score","alt_rank","sentiment","social_dominance","market_dominance"
-        ]:
-            if c_ in df_.columns:
-                df_[c_] = pd.to_numeric(df_[c_], errors="coerce")
+            logging.info(f"[DEBUG] {sym} => building indicators ... len(df_)={len(df_)}")
+
+            # Convert to numeric
+            for c_ in [
+                "open","close","high","low","volume","market_cap",
+                "galaxy_score","alt_rank","sentiment","social_dominance","market_dominance"
+            ]:
+                if c_ in df_.columns:
+                    df_[c_] = pd.to_numeric(df_[c_], errors="coerce")
+                else:
+                    df_[c_] = 0.0
+
+            # compute indicators
+            df_i = compute_indicators_extended(df_)
+            df_i.sort_values("date", inplace=True)
+            df_i.reset_index(drop=True, inplace=True)
+
+            for cc in ["galaxy_score","alt_rank","sentiment","market_cap","social_dominance","market_dominance"]:
+                df_i[cc] = df_i[cc].fillna(0)
+
+            df_i["delta_close_1d"] = df_i["close"].pct_change(1)
+            df_i["delta_close_3d"] = df_i["close"].pct_change(3)
+            df_i["delta_vol_1d"]   = df_i["volume"].pct_change(1)
+            df_i["delta_vol_3d"]   = df_i["volume"].pct_change(3)
+            df_i["delta_mcap_1d"]  = df_i["market_cap"].pct_change(1)
+            df_i["delta_mcap_3d"]  = df_i["market_cap"].pct_change(3)
+            df_i["delta_galaxy_score_3d"]= df_i["galaxy_score"].diff(3)
+            df_i["delta_alt_rank_3d"]    = df_i["alt_rank"].diff(3)
+            df_i["delta_social_dom_3d"]  = df_i["social_dominance"].diff(3)
+            df_i["delta_market_dom_3d"]  = df_i["market_dominance"].diff(3)
+
+            # Merge BTC
+            merged = df_i.copy()
+            if not df_btc.empty:
+                df_btc2 = df_btc[["date","close"]].rename(columns={"close":"btc_close"})
+                merged = pd.merge(merged, df_btc2, on="date", how="left")
+                merged["btc_close"] = merged["btc_close"].fillna(0)
+                merged["btc_daily_change"] = merged["btc_close"].pct_change(1)
+                merged["btc_3d_change"]    = merged["btc_close"].pct_change(3)
             else:
-                df_[c_] = 0.0
+                merged["btc_daily_change"]=0
+                merged["btc_3d_change"]=0
 
-        # Compute indicators
-        logging.info(f"[DEBUG] {sym} => building indicators...")
-        df_i = compute_indicators_extended(df_)
+            # Merge ETH
+            if not df_eth.empty:
+                df_eth2 = df_eth[["date","close"]].rename(columns={"close":"eth_close"})
+                merged = pd.merge(merged, df_eth2, on="date", how="left")
+                merged["eth_close"] = merged["eth_close"].fillna(0)
+                merged["eth_daily_change"] = merged["eth_close"].pct_change(1)
+                merged["eth_3d_change"]    = merged["eth_close"].pct_change(3)
+            else:
+                merged["eth_daily_change"]=0
+                merged["eth_3d_change"]=0
 
-        df_i.sort_values("date", inplace=True)
-        df_i.reset_index(drop=True, inplace=True)
+            merged.replace([np.inf, -np.inf], np.nan, inplace=True)
+            merged["symbol"] = sym
 
-        # fillna
-        for cc in ["galaxy_score","alt_rank","sentiment","market_cap","social_dominance","market_dominance"]:
-            df_i[cc] = df_i[cc].fillna(0)
+            needed_cols = [
+                "date","symbol",
+                "delta_close_1d","delta_close_3d","delta_vol_1d","delta_vol_3d",
+                "rsi14","rsi30","ma_close_7d","ma_close_14d","atr14","macd_std",
+                "stoch_rsi_k","stoch_rsi_d","mfi14","boll_percent_b","obv",
+                "adx","adx_pos","adx_neg",
+                "btc_daily_change","btc_3d_change","eth_daily_change","eth_3d_change",
+                "delta_mcap_1d","delta_mcap_3d","galaxy_score","delta_galaxy_score_3d",
+                "alt_rank","delta_alt_rank_3d","sentiment",
+                "social_dominance","market_dominance",
+                "delta_social_dom_3d","delta_market_dom_3d"
+            ]
+            before_len = len(merged)
+            merged.dropna(subset=needed_cols, inplace=True)
+            after_len = len(merged)
 
-        # Deltas
-        df_i["delta_close_1d"] = df_i["close"].pct_change(1)
-        df_i["delta_close_3d"] = df_i["close"].pct_change(3)
-        df_i["delta_vol_1d"]   = df_i["volume"].pct_change(1)
-        df_i["delta_vol_3d"]   = df_i["volume"].pct_change(3)
-        df_i["delta_mcap_1d"]  = df_i["market_cap"].pct_change(1)
-        df_i["delta_mcap_3d"]  = df_i["market_cap"].pct_change(3)
-        df_i["delta_galaxy_score_3d"] = df_i["galaxy_score"].diff(3)
-        df_i["delta_alt_rank_3d"]     = df_i["alt_rank"].diff(3)
-        df_i["delta_social_dom_3d"]   = df_i["social_dominance"].diff(3)
-        df_i["delta_market_dom_3d"]   = df_i["market_dominance"].diff(3)
+            if after_len <= 0:
+                logging.warning(f"[DROPNA] => {sym}, from {before_len} to {after_len} => skip token.")
+                continue
 
-        # Merge BTC
-        merged = df_i.copy()
-        if not df_btc.empty:
-            df_btc2 = df_btc[["date","close"]].rename(columns={"close":"btc_close"})
-            merged = pd.merge(merged, df_btc2, on="date", how="left")
-            merged["btc_close"] = merged["btc_close"].fillna(0)
-            merged["btc_daily_change"] = merged["btc_close"].pct_change(1)
-            merged["btc_3d_change"]    = merged["btc_close"].pct_change(3)
-        else:
-            merged["btc_daily_change"] = 0
-            merged["btc_3d_change"]    = 0
+            logging.info(f"[TOKEN OK] => {sym}, final shape={merged.shape}")
+            all_dfs.append(merged)
 
-        # Merge ETH
-        if not df_eth.empty:
-            df_eth2 = df_eth[["date","close"]].rename(columns={"close":"eth_close"})
-            merged = pd.merge(merged, df_eth2, on="date", how="left")
-            merged["eth_close"] = merged["eth_close"].fillna(0)
-            merged["eth_daily_change"] = merged["eth_close"].pct_change(1)
-            merged["eth_3d_change"]    = merged["eth_close"].pct_change(3)
-        else:
-            merged["eth_daily_change"] = 0
-            merged["eth_3d_change"]    = 0
+            time.sleep(SLEEP_BETWEEN_TOKENS)
 
-        merged.replace([np.inf, -np.inf], np.nan, inplace=True)
-        merged["symbol"] = sym
-
-        # final needed cols
-        needed_cols = [
-            "date","symbol",
-            "delta_close_1d","delta_close_3d","delta_vol_1d","delta_vol_3d",
-            "rsi14","rsi30","ma_close_7d","ma_close_14d","atr14","macd_std",
-            "stoch_rsi_k","stoch_rsi_d","mfi14","boll_percent_b","obv",
-            "adx","adx_pos","adx_neg",
-            "btc_daily_change","btc_3d_change","eth_daily_change","eth_3d_change",
-            "delta_mcap_1d","delta_mcap_3d","galaxy_score","delta_galaxy_score_3d",
-            "alt_rank","delta_alt_rank_3d","sentiment","social_dominance","market_dominance",
-            "delta_social_dom_3d","delta_market_dom_3d"
-        ]
-        before_len = len(merged)
-        merged.dropna(subset=needed_cols, inplace=True)
-        after_len = len(merged)
-
-        if after_len<=0:
-            logging.warning(f"[DROPNA] => {sym}, from {before_len} to {after_len} => skip token.")
-            continue
-
-        all_dfs.append(merged)
-        logging.info(f"[TOKEN OK] => {sym}, final shape={merged.shape}")
-
-        time.sleep(SLEEP_BETWEEN_TOKENS)
+    except Exception as e:
+        logging.error("[FATAL] Exception in main token loop", exc_info=True)
+        print(f"[ERROR] data_fetcher fatal exception => {e}")
+        # On stoppe ici => pas de CSV
+        return
 
     # final
     if not all_dfs:
