@@ -207,20 +207,20 @@ def main():
             h= now_p.hour
             m= now_p.minute
 
-            # 1) auto_select => 19h45
-            if h==19 and m==45 and not state.get("did_auto_select_today",False):
+            # 1) auto_select => 21h25
+            if h==21 and m==25 and not state.get("did_auto_select_today",False):
                 run_auto_select_once_per_day(state)
 
-            # 2) daily => 19h55
-            if h==19 and m==55 and not state.get("did_daily_update_today",False):
+            # 2) daily => 21h35
+            if h==21 and m==35 and not state.get("did_daily_update_today",False):
                 logging.info("[MAIN] => daily_update_live.")
                 daily_update_live(state, bexec)
                 state["did_daily_update_today"]= True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today => True.")
 
-            # Reset flags si on n'est plus dans l'heure 19
-            if h!=19:
+            # Reset flags si on n'est plus dans l'heure 21
+            if h!=21:
                 if state.get("did_auto_select_today",False):
                     logging.info("[MAIN] reset did_auto_select_today.")
                 state["did_auto_select_today"]=False
@@ -232,7 +232,7 @@ def main():
 
             # Intraday check
             last_check= state.get("last_risk_check_ts",0)
-            elapsed= time.time() - last_check
+            elapsed= time.time()- last_check
             interval= config["strategy"]["check_interval_seconds"]
             if elapsed>= interval:
                 logging.info("[MAIN] intraday_check_real()")
@@ -245,5 +245,5 @@ def main():
 
         time.sleep(10)
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
