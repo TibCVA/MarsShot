@@ -183,14 +183,27 @@ def main():
     if not TOKENS_DAILY:
         logging.warning("[DATA_FETCHER] => tokens list is empty => produce empty CSV.")
         pd.DataFrame().to_csv(OUTPUT_INFERENCE_CSV, index=False)
-        print(f"[WARN] => empty => {OUTPUT_INFERENCE_CSV}")
+        print(f"[WARN] empty => {OUTPUT_INFERENCE_CSV}")
         return
 
-    # (optionnel) fetch BTC/ETH => pour merge
+    # (optionnel) fetch BTC => pour merge
     logging.info("[DEBUG] Starting fetch for BTC reference ...")
-    df_btc = fetch_lunar_data_inference("BTC", lookback_days=LOOKBACK_DAYS) or pd.DataFrame(columns=["date","close"])
+    df_btc_raw = fetch_lunar_data_inference("BTC", lookback_days=LOOKBACK_DAYS)
+    if df_btc_raw is None or df_btc_raw.empty:
+        logging.info("[DEBUG] BTC => None/empty => use empty df.")
+        df_btc = pd.DataFrame(columns=["date","close"])
+    else:
+        df_btc = df_btc_raw
+
     logging.info(f"[DEBUG] df_btc => shape={df_btc.shape}, now fetch ETH ...")
-    df_eth = fetch_lunar_data_inference("ETH", lookback_days=LOOKBACK_DAYS) or pd.DataFrame(columns=["date","close"])
+
+    df_eth_raw = fetch_lunar_data_inference("ETH", lookback_days=LOOKBACK_DAYS)
+    if df_eth_raw is None or df_eth_raw.empty:
+        logging.info("[DEBUG] ETH => None/empty => use empty df.")
+        df_eth = pd.DataFrame(columns=["date","close"])
+    else:
+        df_eth = df_eth_raw
+
     logging.info(f"[DEBUG] df_eth => shape={df_eth.shape}, now let's fetch tokens in TOKENS_DAILY")
 
     all_dfs = []
