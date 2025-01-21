@@ -13,12 +13,9 @@ import logging
 import subprocess  # <-- Pour exécuter data_fetcher/ml_decision
 from flask import Flask, request, jsonify, render_template_string
 
-# === On n'utilise plus telegram_integration ici ===
-# Remplacement par dashboard_data
 try:
     from dashboard_data import (
         get_portfolio_state,
-        list_tokens_tracked,
         get_performance_history,
         get_trades_history,
         emergency_out
@@ -36,7 +33,10 @@ ALL_LOG_FILES = [
     "ml_decision.log"
 ]
 
-def tail_all_logs(num_lines=200):
+# On peut afficher plus de lignes => 400 par exemple
+NUM_LOG_LINES = 400
+
+def tail_all_logs(num_lines=NUM_LOG_LINES):
     combined_lines = []
     for logf in ALL_LOG_FILES:
         if os.path.exists(logf):
@@ -287,14 +287,41 @@ function forceDailyUpdate(){
 """
 
 app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
 
+SECRET_PWD = "SECRET123"
+
+#############################################
+# Modification: On relit config.yaml à chaque requête
+# pour afficher la liste "réelle" (extended_tokens_daily ou tokens_daily)
+#############################################
+def get_tokens_live():
+    """
+    Relit config.yaml, renvoie extended_tokens_daily si dispo,
+    sinon tokens_daily, sinon [].
+    """
+    import yaml
+    if os.path.exists("config.yaml"):
+        with open("config.yaml","r") as f:
+            conf = yaml.safe_load(f)
+        # On priorise extended_tokens_daily
+        if "extended_tokens_daily" in conf and conf["extended_tokens_daily"]:
+            return conf["extended_tokens_daily"]
+        else:
+            return conf.get("tokens_daily", [])
+    else:
+        return []
+
+#############################################
 @app.route(f"/dashboard/<pwd>", methods=["GET"])
 def dashboard(pwd):
     if pwd != SECRET_PWD:
         return "Forbidden", 403
 
+    # On ne se sert plus de list_tokens_tracked() -> on recharge nous-même
     pf = get_portfolio_state()
-    tokens = list_tokens_tracked()
+    # lecture "live"
+    tokens = get_tokens_live()
     perf = get_performance_history()
     trades = get_trades_history()
     model_date = get_model_version_date()
@@ -361,7 +388,7 @@ def force_daily_update(pwd):
 def get_logs(pwd):
     if pwd != SECRET_PWD:
         return "Forbidden", 403
-    txt = tail_all_logs(num_lines=200)
+    txt = tail_all_logs(num_lines=NUM_LOG_LINES)
     return txt, 200, {"Content-Type":"text/plain; charset=utf-8"}
 
 def run_dashboard():
