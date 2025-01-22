@@ -83,7 +83,7 @@ def compute_token_score(p24, p7, p30):
     """
     return 0.5*p7 + 0.3*p30 + 0.2*p24
 
-def select_top_tokens(client, top_n=40):
+def select_top_tokens(client, top_n=60):
     """
     Récupère la liste de toutes les paires USDT, calcule la perf 24h, 7j, 30j,
     et applique compute_token_score pour ranker. On renvoie les top_n.
