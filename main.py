@@ -219,20 +219,20 @@ def main():
             hour_p = now_p.hour
             min_p  = now_p.minute
 
-            # 1) auto_select => 23h00
-            if hour_p == 23 and min_p == 0 and not state.get("did_auto_select_today", False):
+            # 1) auto_select => 14h00
+            if hour_p == 14 and min_p == 0 and not state.get("did_auto_select_today", False):
                 run_auto_select_once_per_day(state)
 
-            # 2) daily => 23h15
-            if hour_p == 23 and min_p == 15 and not state.get("did_daily_update_today", False):
-                logging.info("[MAIN] 23h15 => daily_update_live.")
+            # 2) daily => 14h15
+            if hour_p == 14 and min_p == 15 and not state.get("did_daily_update_today", False):
+                logging.info("[MAIN] 14h15 => daily_update_live.")
                 daily_update_live(state, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today => True.")
 
-            # reset flags si on n'est plus dans l'heure 23
-            if hour_p != 23:
+            # reset flags si on n'est plus dans l'heure 14
+            if hour_p != 14:
                 if state.get("did_auto_select_today", False):
                     logging.info("[MAIN] reset did_auto_select_today.")
                 state["did_auto_select_today"] = False
