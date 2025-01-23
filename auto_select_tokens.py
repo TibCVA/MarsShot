@@ -4,7 +4,7 @@
 """
 auto_select_tokens.py
 ---------------------
-Sélectionne automatiquement les 40 meilleurs tokens "moonshot" basés sur
+Sélectionne automatiquement les 60 meilleurs tokens "moonshot" basés sur
 leur performance 24h, 7j et 30j, avec des pondérations plus fortes sur
 le 7 jours et le 30 jours, pour un effet momentum + tendance.
 """
@@ -54,8 +54,8 @@ def get_24h_change(client, symbol):
 
 def get_kline_change(client, symbol, days=7):
     """
-    Retourne la variation sur 'days' jours (ex: +10% => 0.10) en se basant sur
-    des klines journalières. 0.0 si problème ou data insuffisante.
+    Retourne la variation sur 'days' jours (ex: +10% => 0.10)
+    en se basant sur des klines journalières. 0.0 si problème ou data insuffisante.
     """
     limit = days+5
     try:
@@ -95,7 +95,6 @@ def select_top_tokens(client, top_n=60):
     count=0
     for sym in all_pairs:
         count += 1
-        # petite pause toutes les 20 requêtes
         if (count % 20) == 0:
             time.sleep(1)
 
@@ -157,11 +156,11 @@ def main():
 
     client = Client(key, sec)
 
-    # On veut désormais 40 tokens, pour attraper plus de "moonshots"
-    best40 = select_top_tokens(client, top_n=40)
-    logging.info(f"[AUTO] best40 => {best40}")
+    # On veut désormais top 60 => fix l'appel
+    best60 = select_top_tokens(client, top_n=60)
+    logging.info(f"[AUTO] best60 => {best60}")
 
-    update_config_tokens_daily(best40)
+    update_config_tokens_daily(best60)
 
     logging.info("=== DONE auto_select_tokens ===")
     print("[OK] auto_select_tokens => config.yaml updated")
