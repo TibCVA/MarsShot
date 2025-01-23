@@ -127,7 +127,7 @@ def daily_update_live(state, bexec):
     for asset, real_qty in list(holdings.items()):
         # skip complet si c'est USDT/BTC/FDUSD
         if asset.upper() in ["USDT","BTC","FDUSD"]:
-            logging.info(f"[DAILY SELL] skip => {asset} => car stablecoin/ BTC/ FDUSD")
+            logging.info(f"[DAILY SELL] skip => {asset} => car stablecoin/BTC/FDUSD")
             continue
 
         current_px = bexec.get_symbol_price(asset)
@@ -167,7 +167,6 @@ def daily_update_live(state, bexec):
     buy_threshold = strat.get("buy_threshold", 0.5)
     for sym in tokens_daily:
         # skip si déjà dans holdings
-        #  (on n'empêche plus BTC, USDT, FDUSD - si l'algorithme veut en acheter, c'est possible)
         if sym in holdings:
             continue
         p = prob_map.get(sym, None)
@@ -237,20 +236,20 @@ def main():
             hour_p = now_p.hour
             min_p  = now_p.minute
 
-            # 1) auto_select => 16h15
-            if hour_p == 16 and min_p == 15 and not state.get("did_auto_select_today", False):
+            # 1) auto_select => 21h15
+            if hour_p == 21 and min_p == 15 and not state.get("did_auto_select_today", False):
                 run_auto_select_once_per_day(state)
 
-            # 2) daily => 16h30
-            if hour_p == 16 and min_p == 30 and not state.get("did_daily_update_today", False):
-                logging.info("[MAIN] 16h30 => daily_update_live.")
+            # 2) daily => 21h30
+            if hour_p == 21 and min_p == 30 and not state.get("did_daily_update_today", False):
+                logging.info("[MAIN] 21h30 => daily_update_live.")
                 daily_update_live(state, bexec)
                 state["did_daily_update_today"] = True
                 save_state(state)
                 logging.info("[MAIN] daily_update_today => True.")
 
-            # reset flags si on n'est plus dans l'heure 16
-            if hour_p != 16:
+            # reset flags si on n'est plus dans l'heure 21
+            if hour_p != 21:
                 if state.get("did_auto_select_today", False):
                     logging.info("[MAIN] reset did_auto_select_today.")
                 state["did_auto_select_today"] = False
