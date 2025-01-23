@@ -51,8 +51,8 @@ def daily_update_live(state, bexec):
       - recharge config.yaml => tokens_daily
       - union => tokens_daily + positions_meta => extended_tokens_daily
       - data_fetcher + ml_decision
-      - SELL => positions_meta
-      - BUY => tokens_daily (avec leftover dynamique)
+      - SELL => si prob < threshold, sauf si token est BTC/USDT/FDUSD ou val>10
+      - BUY => tokens_daily (top5)
     """
     logging.info("[DAILY UPDATE] Start daily_update_live")
 
@@ -83,7 +83,8 @@ def daily_update_live(state, bexec):
         logging.error(f"[DAILY UPDATE] data_fetcher => {e}")
         return
 
-    if not os.path.exists("daily_inference_data.csv") or os.path.getsize("daily_inference_data.csv") < 100:
+    if (not os.path.exists("daily_inference_data.csv") 
+        or os.path.getsize("daily_inference_data.csv") < 100):
         logging.warning("[DAILY UPDATE] daily_inference_data.csv introuvable ou vide => skip ml_decision")
         return
 
@@ -118,27 +119,38 @@ def daily_update_live(state, bexec):
 
     logging.info(f"[DAILY UPDATE] holdings={holdings}, usdt={usdt_balance:.2f}")
 
-    # 4) SELL => tokens du bot uniquement
+    # 4) SELL => pour tous les tokens (y compris hors positions_meta),
+    #    sauf si c'est USDT/BTC/FDUSD ou val>10USDT
+    #    ET prob < sell_threshold
+    sell_threshold = strat.get("sell_threshold", 0.3)
+    big_gain_pct   = strat.get("big_gain_exception_pct", 10.0)  # ex: x10
     for asset, real_qty in list(holdings.items()):
-        if asset not in state["positions_meta"]:
-            # on ne vend pas ce qui n'a pas été acheté par le bot
+        # skip complet si c'est USDT/BTC/FDUSD
+        if asset.upper() in ["USDT","BTC","FDUSD"]:
+            logging.info(f"[DAILY SELL] skip => {asset} => car stablecoin/ BTC/ FDUSD")
             continue
+
+        current_px = bexec.get_symbol_price(asset)
+        val_in_usd = current_px * real_qty
+        if val_in_usd > 10.0:
+            logging.info(f"[DAILY SELL] skip => {asset} => val_in_usd={val_in_usd:.2f} > 10")
+            continue
+
         prob = prob_map.get(asset, None)
-        logging.info(f"[DAILY SELL CHECK] {asset}, prob={prob}")
+        logging.info(f"[DAILY SELL CHECK] {asset}, prob={prob}, val_in_usd={val_in_usd:.2f}")
+        # si pas de prob => skip
         if prob is None:
             logging.info(f"[DAILY SELL] {asset} => prob=None => skip.")
             continue
 
-        if prob < strat["sell_threshold"]:
+        if prob < sell_threshold:
+            # Vérifier si on a dans positions_meta => big_gain_exception
             meta = state["positions_meta"].get(asset, {})
-            did_skip  = meta.get("did_skip_sell_once", False)
-            entry_px  = meta.get("entry_px", None)
-            current_px= bexec.get_symbol_price(asset)
-
-            if entry_px and entry_px > 0:
+            entry_px = meta.get("entry_px", 0.0)
+            if entry_px>0:
                 ratio = current_px / entry_px
-                # big_gain_exception_pct => skip la vente 1 seule fois
-                if ratio >= strat["big_gain_exception_pct"] and not did_skip:
+                did_skip  = meta.get("did_skip_sell_once", False)
+                if ratio >= big_gain_pct and not did_skip:
                     meta["did_skip_sell_once"] = True
                     state["positions_meta"][asset] = meta
                     logging.info(f"[DAILY SELL SKIP big gain] => {asset}, ratio={ratio:.2f}, prob={prob:.2f}")
@@ -152,34 +164,33 @@ def daily_update_live(state, bexec):
 
     # 5) BUY => top 5 par prob
     buy_candidates = []
+    buy_threshold = strat.get("buy_threshold", 0.5)
     for sym in tokens_daily:
-        if sym in holdings:  # déjà détenu
+        # skip si déjà dans holdings
+        #  (on n'empêche plus BTC, USDT, FDUSD - si l'algorithme veut en acheter, c'est possible)
+        if sym in holdings:
             continue
         p = prob_map.get(sym, None)
         logging.info(f"[DAILY BUY CHECK] {sym}, prob={p}")
-        if p is not None and p >= strat["buy_threshold"]:
+        if p is not None and p >= buy_threshold:
             buy_candidates.append((sym, p))
 
     buy_candidates.sort(key=lambda x: x[1], reverse=True)
     top5 = buy_candidates[:5]
     logging.info(f"[DAILY BUY SELECT] => {top5}")
 
-    # On achète dynamiquement => leftover
+    # On achète (dynamique) => leftover
     if top5 and usdt_balance > 10:
         leftover = usdt_balance
         n = len(top5)
         for i, (sym, prob) in enumerate(top5, start=1):
             tokens_left = n - i + 1
-
-            # Vérifie s'il reste assez de leftover pour acheter
             if leftover < 10:
                 logging.info("[DAILY BUY] leftover < 10 => skip remaining tokens.")
                 break
-
             alloc = leftover / tokens_left
             qty_bought, avg_px, fill_sum = bexec.buy(sym, alloc)
             logging.info(f"[DAILY BUY EXEC] => {sym}, qty={qty_bought:.4f}, cost={fill_sum:.2f}, px={avg_px:.4f}")
-
             if qty_bought > 0:
                 state["positions_meta"][sym] = {
                     "entry_px": avg_px,
@@ -187,7 +198,7 @@ def daily_update_live(state, bexec):
                     "partial_sold": False,
                     "max_price": avg_px
                 }
-                leftover -= fill_sum  # on retire le coût réel
+                leftover -= fill_sum
                 save_state(state)
 
     logging.info("[DAILY UPDATE] Done daily_update_live")
@@ -212,7 +223,6 @@ def main():
     state = load_state()
     logging.info(f"[MAIN] Loaded state => keys={list(state.keys())}")
 
-    # Init TradeExecutor
     bexec = TradeExecutor(
         api_key=config["binance_api"]["api_key"],
         api_secret=config["binance_api"]["api_secret"]
@@ -227,11 +237,11 @@ def main():
             hour_p = now_p.hour
             min_p  = now_p.minute
 
-            # 1) token selector => 16h15
+            # 1) auto_select => 16h15
             if hour_p == 16 and min_p == 15 and not state.get("did_auto_select_today", False):
                 run_auto_select_once_per_day(state)
 
-            # 2) daily update => 16h30
+            # 2) daily => 16h30
             if hour_p == 16 and min_p == 30 and not state.get("did_daily_update_today", False):
                 logging.info("[MAIN] 16h30 => daily_update_live.")
                 daily_update_live(state, bexec)
@@ -248,7 +258,6 @@ def main():
                 if state.get("did_daily_update_today", False):
                     logging.info("[MAIN] reset daily_update_today.")
                 state["did_daily_update_today"] = False
-
                 save_state(state)
 
             # Intraday check => toutes X secondes
