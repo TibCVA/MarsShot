@@ -56,7 +56,7 @@ def daily_update_live(state, bexec):
       5) SELL => selon les règles (prob < threshold, val > 5 USDT, etc.)
       6) Attendre 5 minutes pour laisser le solde USDT se mettre à jour.
       7) Re-fetch account info pour recalculer 'holdings' et 'usdt_balance'.
-      8) BUY => top 5 par prob, leftover dynamique.
+      8) BUY => top 3 par prob, leftover dynamique.
     """
     logging.info("[DAILY UPDATE] Start daily_update_live")
 
@@ -193,7 +193,7 @@ def daily_update_live(state, bexec):
 
     logging.info(f"[DAILY UPDATE] After wait => holdings={new_holdings}, usdt={new_usdt_balance:.2f}")
 
-    # 7) BUY => top 5 par prob
+    # 7) BUY => top 3 par prob
     buy_candidates = []
     for sym in tokens_daily:
         p = prob_map.get(sym, None)
@@ -213,14 +213,14 @@ def daily_update_live(state, bexec):
         buy_candidates.append((sym, p))
 
     buy_candidates.sort(key=lambda x: x[1], reverse=True)
-    top5 = buy_candidates[:5]
-    logging.info(f"[DAILY BUY SELECT] => {top5}")
+    top3 = buy_candidates[:3]
+    logging.info(f"[DAILY BUY SELECT] => {top3}")
 
-    if top5 and new_usdt_balance > 10:
+    if top3 and new_usdt_balance > 10:
         leftover = new_usdt_balance
         leftover *= 0.999  # léger coussin
-        n = len(top5)
-        for i, (sym, p) in enumerate(top5, start=1):
+        n = len(top3)
+        for i, (sym, p) in enumerate(top3, start=1):
             tokens_left = n - i + 1
             if leftover < 10:
                 logging.info("[DAILY BUY] leftover < 10 => stop buys.")
