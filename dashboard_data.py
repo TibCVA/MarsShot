@@ -36,13 +36,17 @@ PERF_FILE  = "performance_history.json"
 def get_portfolio_state():
     """
     Retourne un dict {"positions": [...], "total_value_usdt": ...}
-    représentant la liste des tokens (symbol, qty, value_usdt) et la somme totale en USDT.
+    représentant la liste des tokens détenus (symbol, qty, value_usdt)
+    et la somme totale en USDT.
+    
+    Pour l'affichage, seuls les tokens dont la valeur est supérieure ou égale à 1.5 USDT
+    sont inclus, à l'exception de USDT qui est toujours affiché.
     """
     bexec = TradeExecutor(BINANCE_KEY, BINANCE_SECRET)
     info  = bexec.client.get_account()
     bals  = info["balances"]
 
-    positions = []
+    positions_all = []
     total_val = 0.0
 
     for b in bals:
@@ -52,20 +56,28 @@ def get_portfolio_state():
         qty   = free + locked
         if qty <= 0:
             continue
+
         if asset.upper() == "USDT":
             val_usdt = qty
         else:
             px = bexec.get_symbol_price(asset)
             val_usdt = px * qty
-        positions.append({
+
+        pos = {
             "symbol": asset,
             "qty": round(qty, 4),
             "value_usdt": round(val_usdt, 2)
-        })
+        }
+        positions_all.append(pos)
         total_val += val_usdt
 
-    # Optionnel : à chaque appel, on peut enregistrer la valeur du portefeuille (si assez de temps s'est écoulé)
-    # Pour ne pas enregistrer trop souvent, on enregistre seulement si le dernier enregistrement date de plus de 5 minutes.
+    # Filtrage : ne garder que USDT ou tokens dont la valeur est >= 1.5 USDT
+    positions_display = [
+        pos for pos in positions_all
+        if pos["symbol"].upper() == "USDT" or pos["value_usdt"] >= 1.5
+    ]
+
+    # Enregistrement de la valeur du portefeuille dans l'historique
     try:
         if os.path.exists(PERF_FILE):
             with open(PERF_FILE, "r") as f:
@@ -82,7 +94,7 @@ def get_portfolio_state():
         logging.error(f"[PORTFOLIO] record_portfolio_value error: {e}")
 
     return {
-        "positions": positions,
+        "positions": positions_display,
         "total_value_usdt": round(total_val, 2)
     }
 
@@ -110,7 +122,6 @@ def get_trades_history():
     elif os.path.exists("closed_trades.csv"):
         try:
             df = pd.read_csv("closed_trades.csv")
-            # Si le CSV ne contient pas de colonne "timestamp", nous créons un timestamp à partir de exit_date
             if "timestamp" not in df.columns and "exit_date" in df.columns:
                 df["timestamp"] = pd.to_datetime(df["exit_date"]).astype(int) // 10**9
             trades = df.to_dict(orient="records")
