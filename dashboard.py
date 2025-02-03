@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # coding: utf-8
+
 """
 Mini-dashboard Flask pour MarsShot.
 Affiche plusieurs onglets, concatène les logs.
@@ -70,7 +71,9 @@ TEMPLATE_HTML = r"""
   <meta charset="utf-8">
   <title>MarsShot Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link 
+    rel="stylesheet" 
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <style>
     body { margin: 20px; }
     h1,h2,h3 { margin-top: 10px; }
@@ -86,32 +89,44 @@ TEMPLATE_HTML = r"""
 <!-- NAV TABS -->
 <ul class="nav nav-tabs" id="myTab" role="tablist">
   <li class="nav-item" role="presentation">
-    <button class="nav-link active" id="positions-tab" data-bs-toggle="tab" data-bs-target="#positions" type="button" role="tab" aria-controls="positions" aria-selected="true">
+    <button class="nav-link active" id="positions-tab" 
+            data-bs-toggle="tab" data-bs-target="#positions" 
+            type="button" role="tab" aria-controls="positions" aria-selected="true">
       Positions
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="perf-tab" data-bs-toggle="tab" data-bs-target="#perf" type="button" role="tab" aria-controls="perf" aria-selected="false">
+    <button class="nav-link" id="perf-tab" 
+            data-bs-toggle="tab" data-bs-target="#perf" 
+            type="button" role="tab" aria-controls="perf" aria-selected="false">
       Performance
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="tokens-tab" data-bs-toggle="tab" data-bs-target="#tokens" type="button" role="tab" aria-controls="tokens" aria-selected="false">
+    <button class="nav-link" id="tokens-tab" 
+            data-bs-toggle="tab" data-bs-target="#tokens" 
+            type="button" role="tab" aria-controls="tokens" aria-selected="false">
       Tokens
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="history-tab" data-bs-toggle="tab" data-bs-target="#history" type="button" role="tab" aria-controls="history" aria-selected="false">
+    <button class="nav-link" id="history-tab" 
+            data-bs-toggle="tab" data-bs-target="#history" 
+            type="button" role="tab" aria-controls="history" aria-selected="false">
       Historique
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="emergency-tab" data-bs-toggle="tab" data-bs-target="#emergency" type="button" role="tab" aria-controls="emergency" aria-selected="false">
+    <button class="nav-link" id="emergency-tab" 
+            data-bs-toggle="tab" data-bs-target="#emergency" 
+            type="button" role="tab" aria-controls="emergency" aria-selected="false">
       Emergency
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="logs-tab" data-bs-toggle="tab" data-bs-target="#logs" type="button" role="tab" aria-controls="logs" aria-selected="false">
+    <button class="nav-link" id="logs-tab" 
+            data-bs-toggle="tab" data-bs-target="#logs" 
+            type="button" role="tab" aria-controls="logs" aria-selected="false">
       Logs
     </button>
   </li>
@@ -250,7 +265,7 @@ function refreshLogs(){
 }
 setInterval(refreshLogs, 3000);
 
-// Forcer daily
+// Forcer daily update
 function forceDailyUpdate(){
   if(confirm("Forcer le daily update ?")) {
     fetch("{{ url_for('force_daily_update', pwd=secret_pwd) }}", {method:'POST'})
