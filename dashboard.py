@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # coding: utf-8
-
 """
 Mini-dashboard Flask pour MarsShot.
 Affiche plusieurs onglets, concatène les logs.
@@ -10,7 +9,7 @@ Affiche plusieurs onglets, concatène les logs.
 import os
 import datetime
 import logging
-import subprocess  # <-- Pour exécuter data_fetcher/ml_decision
+import subprocess  # Pour exécuter data_fetcher/ml_decision
 from flask import Flask, request, jsonify, render_template_string
 
 try:
@@ -32,8 +31,6 @@ ALL_LOG_FILES = [
     "data_fetcher.log",
     "ml_decision.log"
 ]
-
-# On peut afficher plus de lignes => 400 par exemple
 NUM_LOG_LINES = 400
 
 def tail_all_logs(num_lines=NUM_LOG_LINES):
@@ -45,8 +42,7 @@ def tail_all_logs(num_lines=NUM_LOG_LINES):
                     lines = f.readlines()
                 lines = lines[-num_lines:]
                 combined_lines.append(f"\n=== [ {logf} ] ===\n")
-                for line in lines:
-                    combined_lines.append(line)
+                combined_lines.extend(lines)
             except Exception as e:
                 combined_lines.append(f"\n[LOG ERROR] Impossible de lire {logf} => {e}\n")
         else:
@@ -74,9 +70,7 @@ TEMPLATE_HTML = r"""
   <meta charset="utf-8">
   <title>MarsShot Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link 
-    rel="stylesheet" 
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <style>
     body { margin: 20px; }
     h1,h2,h3 { margin-top: 10px; }
@@ -92,44 +86,32 @@ TEMPLATE_HTML = r"""
 <!-- NAV TABS -->
 <ul class="nav nav-tabs" id="myTab" role="tablist">
   <li class="nav-item" role="presentation">
-    <button class="nav-link active" id="positions-tab" 
-            data-bs-toggle="tab" data-bs-target="#positions" 
-            type="button" role="tab" aria-controls="positions" aria-selected="true">
+    <button class="nav-link active" id="positions-tab" data-bs-toggle="tab" data-bs-target="#positions" type="button" role="tab" aria-controls="positions" aria-selected="true">
       Positions
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="perf-tab" 
-            data-bs-toggle="tab" data-bs-target="#perf" 
-            type="button" role="tab" aria-controls="perf" aria-selected="false">
+    <button class="nav-link" id="perf-tab" data-bs-toggle="tab" data-bs-target="#perf" type="button" role="tab" aria-controls="perf" aria-selected="false">
       Performance
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="tokens-tab" 
-            data-bs-toggle="tab" data-bs-target="#tokens" 
-            type="button" role="tab" aria-controls="tokens" aria-selected="false">
+    <button class="nav-link" id="tokens-tab" data-bs-toggle="tab" data-bs-target="#tokens" type="button" role="tab" aria-controls="tokens" aria-selected="false">
       Tokens
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="history-tab" 
-            data-bs-toggle="tab" data-bs-target="#history" 
-            type="button" role="tab" aria-controls="history" aria-selected="false">
+    <button class="nav-link" id="history-tab" data-bs-toggle="tab" data-bs-target="#history" type="button" role="tab" aria-controls="history" aria-selected="false">
       Historique
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="emergency-tab" 
-            data-bs-toggle="tab" data-bs-target="#emergency" 
-            type="button" role="tab" aria-controls="emergency" aria-selected="false">
+    <button class="nav-link" id="emergency-tab" data-bs-toggle="tab" data-bs-target="#emergency" type="button" role="tab" aria-controls="emergency" aria-selected="false">
       Emergency
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="logs-tab" 
-            data-bs-toggle="tab" data-bs-target="#logs" 
-            type="button" role="tab" aria-controls="logs" aria-selected="false">
+    <button class="nav-link" id="logs-tab" data-bs-toggle="tab" data-bs-target="#logs" type="button" role="tab" aria-controls="logs" aria-selected="false">
       Logs
     </button>
   </li>
@@ -286,25 +268,14 @@ function forceDailyUpdate(){
 </html>
 """
 
-app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
-
-SECRET_PWD = "SECRET123"
-
 #############################################
-# Modification: On relit config.yaml à chaque requête
-# pour afficher la liste "réelle" (extended_tokens_daily ou tokens_daily)
+# On relit config.yaml à chaque requête pour afficher la liste réelle
 #############################################
 def get_tokens_live():
-    """
-    Relit config.yaml, renvoie extended_tokens_daily si dispo,
-    sinon tokens_daily, sinon [].
-    """
     import yaml
     if os.path.exists("config.yaml"):
-        with open("config.yaml","r") as f:
+        with open("config.yaml", "r") as f:
             conf = yaml.safe_load(f)
-        # On priorise extended_tokens_daily
         if "extended_tokens_daily" in conf and conf["extended_tokens_daily"]:
             return conf["extended_tokens_daily"]
         else:
@@ -318,9 +289,7 @@ def dashboard(pwd):
     if pwd != SECRET_PWD:
         return "Forbidden", 403
 
-    # On ne se sert plus de list_tokens_tracked() -> on recharge nous-même
     pf = get_portfolio_state()
-    # lecture "live"
     tokens = get_tokens_live()
     perf = get_performance_history()
     trades = get_trades_history()
@@ -339,36 +308,28 @@ def dashboard(pwd):
 @app.route(f"/emergency/<pwd>", methods=["POST"])
 def emergency_api(pwd):
     if pwd != SECRET_PWD:
-        return jsonify({"message":"Forbidden"}), 403
+        return jsonify({"message": "Forbidden"}), 403
     emergency_out()
-    return jsonify({"message":"Emergency Out déclenché."})
+    return jsonify({"message": "Emergency Out déclenché."})
 
 @app.route(f"/force_daily_update/<pwd>", methods=["POST"])
 def force_daily_update(pwd):
     if pwd != SECRET_PWD:
-        return jsonify({"message":"Forbidden"}), 403
-
-    # 1) data_fetcher => pour actualiser daily_inference_data.csv
+        return jsonify({"message": "Forbidden"}), 403
     try:
         logging.info("[FORCE DAILY] Running data_fetcher.py")
         subprocess.run(["python", "data_fetcher.py"], check=False)
     except Exception as e:
         logging.error(f"[FORCE DAILY] data_fetcher => {e}")
-
-    # 2) ml_decision => daily_probabilities.csv
     try:
         logging.info("[FORCE DAILY] Running ml_decision.py")
         subprocess.run(["python", "ml_decision.py"], check=False)
     except Exception as e:
         logging.error(f"[FORCE DAILY] ml_decision => {e}")
-
-    # 3) Appeler daily_update_live(...) pour BUY/SELL
     from main import load_state, save_state, daily_update_live
     import yaml
-
-    with open("config.yaml","r") as f:
+    with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
-
     state = load_state()
     bexec = None
     try:
@@ -379,22 +340,21 @@ def force_daily_update(pwd):
         )
     except Exception as e:
         logging.error(f"[FORCE DAILY] TradeExecutor => {e}")
-        return jsonify({"message":"TradeExecutor init error."}), 500
-
-    daily_update_live(state, config, bexec)
-    return jsonify({"message":"Daily Update déclenché manuellement."})
+        return jsonify({"message": "TradeExecutor init error."}), 500
+    daily_update_live(state, bexec)
+    return jsonify({"message": "Daily Update déclenché manuellement."})
 
 @app.route(f"/logs/<pwd>", methods=["GET"])
 def get_logs(pwd):
     if pwd != SECRET_PWD:
         return "Forbidden", 403
     txt = tail_all_logs(num_lines=NUM_LOG_LINES)
-    return txt, 200, {"Content-Type":"text/plain; charset=utf-8"}
+    return txt, 200, {"Content-Type": "text/plain; charset=utf-8"}
 
 def run_dashboard():
     logging.info("[DASHBOARD] Starting Flask on 0.0.0.0:5000")
     app.run(host="0.0.0.0", port=5000, debug=False)
 
-if __name__=="__main__":
+if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     run_dashboard()
