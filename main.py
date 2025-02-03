@@ -244,12 +244,12 @@ def main():
     UPDATE_INTERVAL_SEC = 12 * 3600  # 43 200 secondes
 
     # Pour l'auto_select qui se déclenche toujours à 19h45 (inchangé)
-    AUTO_SELECT_HOUR = 19
-    AUTO_SELECT_MIN  = 45
+    AUTO_SELECT_HOUR = 00
+    AUTO_SELECT_MIN  = 20
 
     # Pour le premier daily update fixe (à 19h55) :
-    FIRST_UPDATE_HOUR = 19
-    FIRST_UPDATE_MIN  = 55
+    FIRST_UPDATE_HOUR = 00
+    FIRST_UPDATE_MIN  = 30
 
     while True:
         try:
