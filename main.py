@@ -31,9 +31,7 @@ def load_probabilities_csv(csv_path="daily_probabilities.csv"):
 
 def run_auto_select_once_per_day(state):
     """
-    Vérifie si on a déjà lancé auto_select_tokens.py aujourd'hui.
-    Si non, on exécute le script, puis on met à jour did_auto_select_today.
-    (Cette fonction reste inchangée et s'exécute une fois par jour à 19h45.)
+    Exécute auto_select_tokens.py une fois par jour à 00h20.
     """
     if state.get("did_auto_select_today", False):
         return
@@ -48,12 +46,11 @@ def run_auto_select_once_per_day(state):
 
 def daily_update_live(state, bexec):
     """
-    Même logique daily_update_live que votre version actuelle.
-    (Aucune modification dans la logique interne.)
+    Exécute le daily update live (data_fetcher, ml_decision, SELL/BUY, etc.)
+    selon la logique déjà en place.
     """
     logging.info("[DAILY UPDATE] Start daily_update_live")
 
-    # --- Vérif config.yaml
     if not os.path.exists("config.yaml"):
         logging.error("[DAILY UPDATE] config.yaml introuvable => skip daily_update.")
         return
@@ -70,7 +67,7 @@ def daily_update_live(state, bexec):
     MIN_VALUE_TO_SELL = 5.0   
     MAX_VALUE_TO_SKIP_BUY = 10.0  
 
-    # 1) Fusion tokens_daily + positions_meta => extended_tokens_daily
+    # Fusion tokens_daily et positions_meta pour créer extended_tokens_daily
     system_positions = list(state.get("positions_meta", {}).keys())
     full_list = list(set(tokens_daily).union(set(system_positions)))
     logging.info(f"[DAILY UPDATE] union tokens => {full_list}")
@@ -78,30 +75,25 @@ def daily_update_live(state, bexec):
     with open("config_temp.yaml", "w") as fw:
         yaml.safe_dump(config, fw, sort_keys=False)
 
-    # 2) data_fetcher => daily_inference_data.csv
     try:
         subprocess.run(["python", "modules/data_fetcher.py", "--config", "config_temp.yaml"], check=False)
     except Exception as e:
         logging.error(f"[DAILY UPDATE] data_fetcher => {e}")
         return
 
-    if (not os.path.exists("daily_inference_data.csv")
-        or os.path.getsize("daily_inference_data.csv") < 100):
+    if (not os.path.exists("daily_inference_data.csv") or os.path.getsize("daily_inference_data.csv") < 100):
         logging.warning("[DAILY UPDATE] daily_inference_data.csv introuvable ou vide => skip ml_decision.")
         return
 
-    # 3) ml_decision => daily_probabilities.csv
     try:
         subprocess.run(["python", "modules/ml_decision.py"], check=False)
     except Exception as e:
         logging.error(f"[DAILY UPDATE] ml_decision => {e}")
         return
 
-    # 4) Charger prob_map
     prob_map = load_probabilities_csv("daily_probabilities.csv")
     logging.info(f"[DAILY UPDATE] tokens_daily={tokens_daily}, prob_map.size={len(prob_map)}")
 
-    # 5) Récup solde => holdings + usdt_balance
     try:
         account_info = bexec.client.get_account()
     except Exception as e:
@@ -113,7 +105,7 @@ def daily_update_live(state, bexec):
     usdt_balance = 0.0
     for b in balances:
         asset = b["asset"]
-        qty   = float(b["free"]) + float(b["locked"])
+        qty = float(b["free"]) + float(b["locked"])
         if asset.upper() == "USDT":
             usdt_balance = qty
         elif qty > 0:
@@ -121,7 +113,7 @@ def daily_update_live(state, bexec):
 
     logging.info(f"[DAILY UPDATE] holdings={holdings}, usdt={usdt_balance:.2f}")
 
-    # 6) SELL phase
+    # Phase SELL
     for asset, real_qty in list(holdings.items()):
         if asset.upper() in ["USDT","BTC","FDUSD"]:
             logging.info(f"[DAILY SELL] skip stable/BTC => {asset}")
@@ -155,7 +147,6 @@ def daily_update_live(state, bexec):
     logging.info("[DAILY UPDATE] Wait 300s (5min) to let sells finalize & USDT free up.")
     time.sleep(300)
 
-    # 7) Récupération du solde après temporisation
     try:
         account_info = bexec.client.get_account()
     except Exception as e:
@@ -166,14 +157,14 @@ def daily_update_live(state, bexec):
     new_usdt_balance = 0.0
     for b in balances2:
         asset = b["asset"]
-        qty   = float(b["free"]) + float(b["locked"])
+        qty = float(b["free"]) + float(b["locked"])
         if asset.upper() == "USDT":
             new_usdt_balance = qty
         elif qty > 0:
             new_holdings[asset] = qty
     logging.info(f"[DAILY UPDATE] After wait => holdings={new_holdings}, usdt={new_usdt_balance:.2f}")
 
-    # 8) BUY phase => top 3 par prob
+    # Phase BUY : sélectionner les 3 meilleurs tokens (BUY si prob >= buy_threshold)
     buy_candidates = []
     for sym in tokens_daily:
         p = prob_map.get(sym, None)
@@ -184,7 +175,7 @@ def daily_update_live(state, bexec):
         if cur_qty > 0:
             px_tmp = bexec.get_symbol_price(sym)
             val_tmp = px_tmp * cur_qty
-            if val_tmp >  MAX_VALUE_TO_SKIP_BUY:
+            if val_tmp > MAX_VALUE_TO_SKIP_BUY:
                 logging.info(f"[DAILY BUY] skip => {sym}, already {val_tmp:.2f} USDT > {MAX_VALUE_TO_SKIP_BUY}")
                 continue
         buy_candidates.append((sym, p))
@@ -192,7 +183,7 @@ def daily_update_live(state, bexec):
     top3 = buy_candidates[:3]
     logging.info(f"[DAILY BUY SELECT] => {top3}")
     if top3 and new_usdt_balance > 10:
-        leftover = new_usdt_balance * 0.999  # léger coussin
+        leftover = new_usdt_balance * 0.999
         n = len(top3)
         for i, (sym, p) in enumerate(top3, start=1):
             tokens_left = n - i + 1
@@ -239,16 +230,15 @@ def main():
     logging.info("[MAIN] TradeExecutor initialized.")
     tz_paris = pytz.timezone("Europe/Paris")
 
-    # Nous utilisons désormais une variable de type timestamp pour gérer les daily update
-    # 12h = 43 200 secondes
-    UPDATE_INTERVAL_SEC = 12 * 3600  # 43 200 secondes
+    # Nouvel intervalle de mise à jour : 6h = 21 600 secondes
+    UPDATE_INTERVAL_SEC = 6 * 3600  # 21 600 secondes
 
-    # Pour l'auto_select qui se déclenche toujours à 19h45 (inchangé)
-    AUTO_SELECT_HOUR = 00
+    # Pour l'auto_select qui se déclenche toujours à 00h20 (inchangé)
+    AUTO_SELECT_HOUR = 0
     AUTO_SELECT_MIN  = 20
 
-    # Pour le premier daily update fixe (à 19h55) :
-    FIRST_UPDATE_HOUR = 00
+    # Pour le premier daily update fixe (à 00h30)
+    FIRST_UPDATE_HOUR = 0
     FIRST_UPDATE_MIN  = 30
 
     while True:
@@ -256,12 +246,12 @@ def main():
             now = datetime.datetime.now(tz_paris)
             current_ts = time.time()
 
-            # --- Auto_select (une fois par jour à 19h45)
+            # Auto-select à 00h20
             if now.hour == AUTO_SELECT_HOUR and now.minute == AUTO_SELECT_MIN and not state.get("did_auto_select_today", False):
                 run_auto_select_once_per_day(state)
 
-            # --- Daily update live :
-            # Si aucun update n'a encore été lancé, on attend le créneau de 19h55
+            # Daily update live :
+            # Si aucun update n'a encore été lancé, attendre le créneau de 00h30
             if "last_daily_update_ts" not in state or state["last_daily_update_ts"] == 0:
                 if now.hour == FIRST_UPDATE_HOUR and now.minute == FIRST_UPDATE_MIN:
                     logging.info("[MAIN] => daily_update_live (first update).")
@@ -269,22 +259,21 @@ def main():
                     state["last_daily_update_ts"] = current_ts
                     save_state(state)
             else:
-                # Si 12 heures se sont écoulées depuis le dernier update, on déclenche le daily update
+                # Si 6 heures se sont écoulées depuis le dernier update, lancer daily_update_live
                 if current_ts - state["last_daily_update_ts"] >= UPDATE_INTERVAL_SEC:
-                    logging.info("[MAIN] => daily_update_live (12h after previous update).")
+                    logging.info("[MAIN] => daily_update_live (6h after previous update).")
                     daily_update_live(state, bexec)
                     state["last_daily_update_ts"] = current_ts
                     save_state(state)
 
-            # --- Réinitialisation des flags auto_select une fois par jour
-            # On réinitialise did_auto_select_today à minuit
+            # Réinitialisation des flags auto_select une fois par jour à minuit
             if now.hour == 0 and now.minute < 5:
                 if state.get("did_auto_select_today", False):
                     logging.info("[MAIN] Reset auto_select flag for new day.")
                     state["did_auto_select_today"] = False
                     save_state(state)
 
-            # --- Intraday risk check toutes les X secondes
+            # Intraday risk check toutes les X secondes
             last_check = state.get("last_risk_check_ts", 0)
             if time.time() - last_check >= config["strategy"]["check_interval_seconds"]:
                 logging.info("[MAIN] intraday_check_real()")
