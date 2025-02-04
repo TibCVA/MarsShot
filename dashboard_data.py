@@ -27,6 +27,8 @@ logging.basicConfig(level=logging.INFO)
 
 # Fichiers d'historique
 TRADE_FILE = "trade_history.json"
+# Si trade_history.json n'existe pas, on pourra tenter de lire closed_trades.csv
+CLOSED_TRADES_FILE = "closed_trades.csv"
 PERF_FILE  = "performance_history.json"
 
 ########################
@@ -39,7 +41,7 @@ def get_portfolio_state():
     représentant la liste des tokens détenus (symbol, qty, value_usdt)
     et la somme totale en USDT.
     
-    Pour l'affichage, seuls les tokens dont la valeur est supérieure ou égale à 1.5 USDT
+    Pour l'affichage, seuls les tokens dont la valeur est >= 1.5 USDT
     sont inclus, à l'exception de USDT qui est toujours affiché.
     """
     bexec = TradeExecutor(BINANCE_KEY, BINANCE_SECRET)
@@ -71,20 +73,18 @@ def get_portfolio_state():
         positions_all.append(pos)
         total_val += val_usdt
 
-    # Filtrage : ne garder que USDT ou tokens dont la valeur est >= 1.5 USDT
     positions_display = [
         pos for pos in positions_all
         if pos["symbol"].upper() == "USDT" or pos["value_usdt"] >= 1.5
     ]
 
-    # Enregistrement de la valeur du portefeuille dans l'historique
     try:
         if os.path.exists(PERF_FILE):
             with open(PERF_FILE, "r") as f:
                 hist = json.load(f)
             if hist:
                 last_ts = hist[-1]["timestamp"]
-                if time.time() - last_ts > 300:  # plus de 5 minutes
+                if time.time() - last_ts > 300:
                     record_portfolio_value(total_val)
             else:
                 record_portfolio_value(total_val)
@@ -109,8 +109,15 @@ def get_trades_history():
     """
     Retourne l'historique des trades.
     D'abord, on tente de lire trade_history.json.
-    Si ce fichier n'existe pas, on tente de lire closed_trades.csv.
-    La liste est triée par timestamp décroissant.
+    Si ce fichier n'existe pas, on tente de lire closed_trades.csv et on réalise un mapping
+    pour que chaque trade ait les clés attendues par le Dashboard :
+      - symbol
+      - buy_prob
+      - sell_prob
+      - days_held
+      - pnl_usdt
+      - pnl_pct
+      - status
     """
     trades = []
     if os.path.exists(TRADE_FILE):
@@ -119,14 +126,36 @@ def get_trades_history():
                 trades = json.load(f)
         except Exception as e:
             logging.error(f"[TRADES] Erreur lecture {TRADE_FILE}: {e}")
-    elif os.path.exists("closed_trades.csv"):
+    elif os.path.exists(CLOSED_TRADES_FILE):
         try:
-            df = pd.read_csv("closed_trades.csv")
+            df = pd.read_csv(CLOSED_TRADES_FILE)
+            # Si le CSV contient exit_date, créer un champ timestamp
             if "timestamp" not in df.columns and "exit_date" in df.columns:
                 df["timestamp"] = pd.to_datetime(df["exit_date"]).astype(int) // 10**9
             trades = df.to_dict(orient="records")
         except Exception as e:
-            logging.error(f"[TRADES] Erreur lecture closed_trades.csv: {e}")
+            logging.error(f"[TRADES] Erreur lecture {CLOSED_TRADES_FILE}: {e}")
+
+    # Pour chaque trade, s'assurer que les clés attendues existent
+    expected_keys = ["symbol", "buy_prob", "sell_prob", "days_held", "pnl_usdt", "pnl_pct", "status"]
+    for trade in trades:
+        # Pour days_held, si entry_date et exit_date sont présents, on peut calculer
+        if "days_held" not in trade:
+            if "entry_date" in trade and "exit_date" in trade:
+                try:
+                    entry = pd.to_datetime(trade["entry_date"])
+                    exit = pd.to_datetime(trade["exit_date"])
+                    trade["days_held"] = (exit - entry).days
+                except Exception:
+                    trade["days_held"] = "N/A"
+            else:
+                trade["days_held"] = "N/A"
+        # Pour les autres clés, si elles n'existent pas, on leur affecte une valeur par défaut
+        for key in ["buy_prob", "sell_prob", "pnl_usdt", "pnl_pct", "status"]:
+            if key not in trade:
+                # Pour pnl_usdt et pnl_pct, on met 0 ; pour les autres, "N/A"
+                trade[key] = 0 if key in ["pnl_usdt", "pnl_pct"] else "N/A"
+
     trades.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
     return trades
 
