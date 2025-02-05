@@ -162,7 +162,7 @@ tokens_daily:
   - "EUR"  
 strategy:
   capital_initial: 1002.8
-  buy_threshold: 0.85
+  buy_threshold: 0.86
   sell_threshold: 0.75
   stop_loss_pct: 0.05
   partial_take_profit_pct: 0.25
