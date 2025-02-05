@@ -235,11 +235,11 @@ def main():
 
     # Pour l'auto_select qui se déclenche toujours à 18h30 (inchangé)
     AUTO_SELECT_HOUR = 18
-    AUTO_SELECT_MIN  = 30
+    AUTO_SELECT_MIN  = 45
 
     # Pour le premier daily update fixe (à 18h40)
     FIRST_UPDATE_HOUR = 18
-    FIRST_UPDATE_MIN  = 40
+    FIRST_UPDATE_MIN  = 55
 
     while True:
         try:
