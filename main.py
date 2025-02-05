@@ -183,7 +183,7 @@ def daily_update_live(state, bexec):
     top3 = buy_candidates[:3]
     logging.info(f"[DAILY BUY SELECT] => {top3}")
     if top3 and new_usdt_balance > 10:
-        leftover = new_usdt_balance * 0.999
+        leftover = new_usdt_balance * 0.98
         n = len(top3)
         for i, (sym, p) in enumerate(top3, start=1):
             tokens_left = n - i + 1
@@ -234,12 +234,12 @@ def main():
     UPDATE_INTERVAL_SEC = 6 * 3600  # 21 600 secondes
 
     # Pour l'auto_select qui se déclenche toujours à 18h30 (inchangé)
-    AUTO_SELECT_HOUR = 18
-    AUTO_SELECT_MIN  = 45
+    AUTO_SELECT_HOUR = 20
+    AUTO_SELECT_MIN  = 00
 
     # Pour le premier daily update fixe (à 18h40)
-    FIRST_UPDATE_HOUR = 18
-    FIRST_UPDATE_MIN  = 55
+    FIRST_UPDATE_HOUR = 20
+    FIRST_UPDATE_MIN  = 10
 
     while True:
         try:
