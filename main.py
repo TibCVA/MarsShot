@@ -233,13 +233,13 @@ def main():
     # Nouvel intervalle de mise à jour : 6h = 21 600 secondes
     UPDATE_INTERVAL_SEC = 6 * 3600  # 21 600 secondes
 
-    # Pour l'auto_select qui se déclenche toujours à 00h20 (inchangé)
-    AUTO_SELECT_HOUR = 0
-    AUTO_SELECT_MIN  = 20
+    # Pour l'auto_select qui se déclenche toujours à 18h30 (inchangé)
+    AUTO_SELECT_HOUR = 18
+    AUTO_SELECT_MIN  = 30
 
-    # Pour le premier daily update fixe (à 00h30)
-    FIRST_UPDATE_HOUR = 0
-    FIRST_UPDATE_MIN  = 30
+    # Pour le premier daily update fixe (à 18h40)
+    FIRST_UPDATE_HOUR = 18
+    FIRST_UPDATE_MIN  = 40
 
     while True:
         try:
