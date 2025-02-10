@@ -31,16 +31,14 @@ def load_probabilities_csv(csv_path="daily_probabilities.csv"):
 
 def run_auto_select_once_per_day(state):
     """
-    Exécute auto_select_tokens.py une fois par jour à 00h20.
+    Exécute auto_select_tokens.py une fois par jour.
     """
-    if state.get("did_auto_select_today", False):
+    if state.get("did_daily_update_today", False):
         return
     logging.info("[MAIN] => auto_select_tokens.py => start")
     try:
         subprocess.run(["python", "auto_select_tokens.py"], check=False)
-        state["did_auto_select_today"] = True
-        save_state(state)
-        logging.info("[MAIN] => auto_select_tokens OK => state updated")
+        logging.info("[MAIN] => auto_select_tokens OK")
     except Exception as e:
         logging.error(f"[MAIN] run_auto_select_once_per_day => {e}")
 
@@ -230,47 +228,28 @@ def main():
     logging.info("[MAIN] TradeExecutor initialized.")
     tz_paris = pytz.timezone("Europe/Paris")
 
-    # Nouvel intervalle de mise à jour : 12h = 43 200 secondes
-    UPDATE_INTERVAL_SEC = 12 * 3600  # 43 200 secondes
-
-    # Pour l'auto_select qui se déclenche toujours à 12h00 (inchangé)
-    AUTO_SELECT_HOUR = 12
-    AUTO_SELECT_MIN  = 00
-
-    # Pour le premier daily update fixe (à 12h10)
-    FIRST_UPDATE_HOUR = 12
-    FIRST_UPDATE_MIN  = 10
+    # Daily update live fixée à 13h15 UTC
+    DAILY_UPDATE_HOUR = 13
+    DAILY_UPDATE_MIN = 15
 
     while True:
         try:
             now = datetime.datetime.now(tz_paris)
             current_ts = time.time()
 
-            # Auto-select à 12h00
-            if now.hour == AUTO_SELECT_HOUR and now.minute == AUTO_SELECT_MIN and not state.get("did_auto_select_today", False):
+            # Daily update live à 13h15 UTC
+            if now.hour == DAILY_UPDATE_HOUR and now.minute == DAILY_UPDATE_MIN and not state.get("did_daily_update_today", False):
+                logging.info("[MAIN] => daily_update_live (scheduled update).")
                 run_auto_select_once_per_day(state)
+                daily_update_live(state, bexec)
+                state["did_daily_update_today"] = True
+                save_state(state)
 
-            # Daily update live :
-            # Si aucun update n'a encore été lancé, attendre le créneau de 12h00
-            if "last_daily_update_ts" not in state or state["last_daily_update_ts"] == 0:
-                if now.hour == FIRST_UPDATE_HOUR and now.minute == FIRST_UPDATE_MIN:
-                    logging.info("[MAIN] => daily_update_live (first update).")
-                    daily_update_live(state, bexec)
-                    state["last_daily_update_ts"] = current_ts
-                    save_state(state)
-            else:
-                # Si 12 heures se sont écoulées depuis le dernier update, lancer daily_update_live
-                if current_ts - state["last_daily_update_ts"] >= UPDATE_INTERVAL_SEC:
-                    logging.info("[MAIN] => daily_update_live (6h after previous update).")
-                    daily_update_live(state, bexec)
-                    state["last_daily_update_ts"] = current_ts
-                    save_state(state)
-
-            # Réinitialisation des flags auto_select une fois par jour à midi
+            # Réinitialisation du flag de daily update à 00h00 UTC
             if now.hour == 0 and now.minute < 5:
-                if state.get("did_auto_select_today", False):
-                    logging.info("[MAIN] Reset auto_select flag for new day.")
-                    state["did_auto_select_today"] = False
+                if state.get("did_daily_update_today", False):
+                    logging.info("[MAIN] Reset daily update flag for new day.")
+                    state["did_daily_update_today"] = False
                     save_state(state)
 
             # Intraday risk check toutes les X secondes
