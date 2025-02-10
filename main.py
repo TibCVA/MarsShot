@@ -230,15 +230,15 @@ def main():
     logging.info("[MAIN] TradeExecutor initialized.")
     tz_paris = pytz.timezone("Europe/Paris")
 
-    # Nouvel intervalle de mise à jour : 6h = 21 600 secondes
-    UPDATE_INTERVAL_SEC = 6 * 3600  # 21 600 secondes
+    # Nouvel intervalle de mise à jour : 12h = 43 200 secondes
+    UPDATE_INTERVAL_SEC = 12 * 3600  # 43 200 secondes
 
-    # Pour l'auto_select qui se déclenche toujours à 18h30 (inchangé)
-    AUTO_SELECT_HOUR = 20
+    # Pour l'auto_select qui se déclenche toujours à 12h00 (inchangé)
+    AUTO_SELECT_HOUR = 12
     AUTO_SELECT_MIN  = 00
 
-    # Pour le premier daily update fixe (à 18h40)
-    FIRST_UPDATE_HOUR = 20
+    # Pour le premier daily update fixe (à 12h10)
+    FIRST_UPDATE_HOUR = 12
     FIRST_UPDATE_MIN  = 10
 
     while True:
@@ -246,12 +246,12 @@ def main():
             now = datetime.datetime.now(tz_paris)
             current_ts = time.time()
 
-            # Auto-select à 00h20
+            # Auto-select à 12h00
             if now.hour == AUTO_SELECT_HOUR and now.minute == AUTO_SELECT_MIN and not state.get("did_auto_select_today", False):
                 run_auto_select_once_per_day(state)
 
             # Daily update live :
-            # Si aucun update n'a encore été lancé, attendre le créneau de 00h30
+            # Si aucun update n'a encore été lancé, attendre le créneau de 12h00
             if "last_daily_update_ts" not in state or state["last_daily_update_ts"] == 0:
                 if now.hour == FIRST_UPDATE_HOUR and now.minute == FIRST_UPDATE_MIN:
                     logging.info("[MAIN] => daily_update_live (first update).")
@@ -259,14 +259,14 @@ def main():
                     state["last_daily_update_ts"] = current_ts
                     save_state(state)
             else:
-                # Si 6 heures se sont écoulées depuis le dernier update, lancer daily_update_live
+                # Si 12 heures se sont écoulées depuis le dernier update, lancer daily_update_live
                 if current_ts - state["last_daily_update_ts"] >= UPDATE_INTERVAL_SEC:
                     logging.info("[MAIN] => daily_update_live (6h after previous update).")
                     daily_update_live(state, bexec)
                     state["last_daily_update_ts"] = current_ts
                     save_state(state)
 
-            # Réinitialisation des flags auto_select une fois par jour à minuit
+            # Réinitialisation des flags auto_select une fois par jour à midi
             if now.hour == 0 and now.minute < 5:
                 if state.get("did_auto_select_today", False):
                     logging.info("[MAIN] Reset auto_select flag for new day.")
