@@ -181,7 +181,7 @@ def daily_update_live(state, bexec):
     top3 = buy_candidates[:3]
     logging.info(f"[DAILY BUY SELECT] => {top3}")
     if top3 and new_usdt_balance > 10:
-        leftover = new_usdt_balance * 0.98
+        leftover = new_usdt_balance * 0.99
         n = len(top3)
         for i, (sym, p) in enumerate(top3, start=1):
             tokens_left = n - i + 1
@@ -229,8 +229,8 @@ def main():
     tz_paris = pytz.timezone("Europe/Paris")
 
     # Daily update live fixée à 13h15 UTC
-    DAILY_UPDATE_HOUR = 13
-    DAILY_UPDATE_MIN = 15
+    DAILY_UPDATE_HOUR = 22
+    DAILY_UPDATE_MIN = 35
 
     while True:
         try:
