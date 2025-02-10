@@ -164,7 +164,7 @@ strategy:
   capital_initial: 1002.8
   buy_threshold: 0.82
   sell_threshold: 0.71
-  stop_loss_pct: 0.05
+  stop_loss_pct: 0.07
   partial_take_profit_pct: 0.25
   partial_take_profit_ratio: 0.4
   trailing_trigger_pct: 1.8
