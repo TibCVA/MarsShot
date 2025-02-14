@@ -230,7 +230,7 @@ def main():
 
     # Daily update live fixée à 01h20 UTC
     DAILY_UPDATE_HOUR = 5
-    DAILY_UPDATE_MIN = 5
+    DAILY_UPDATE_MIN = 2
 
     while True:
         try:
