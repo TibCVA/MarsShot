@@ -81,7 +81,7 @@ def compute_token_score(p24, p7, p30):
       - 30% sur la perf 30 jours (tendance plus durable)
       - 20% sur la perf 24h (volatilité court terme)
     """
-    return 0.3*p7 + 0.5*p30 + 0.2*p24
+    return 0.8*p7 + 0*p30 + 0.2*p24
 
 def select_top_tokens(client, top_n=60):
     """
