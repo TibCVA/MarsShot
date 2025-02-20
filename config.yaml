@@ -296,8 +296,8 @@ tokens_daily:
   - "REQ"
 
 strategy:
-  capital_initial: 1002.8
-  buy_threshold: 0.86
+  capital_initial: 1000
+  buy_threshold: 0.82
   sell_threshold: 0.71
   stop_loss_pct: 0.12
   partial_take_profit_pct: 0.25
