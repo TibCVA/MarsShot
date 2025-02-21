@@ -55,20 +55,11 @@ def main():
         print("[WARN] empty daily_inference_data.csv => skip.")
         return
 
-    needed_cols = COLUMNS_ORDER + ["symbol", "date"]
+    needed_cols = COLUMNS_ORDER + ["symbol","date"]
     missing = [col for col in needed_cols if col not in df.columns]
     if missing:
         logging.error(f"[ERROR] Colonnes manquantes => {missing}")
         print(f"[ERROR] missing cols => {missing}")
-        return
-
-    # Ajout : Conversion de la colonne "date" en datetime et filtre sur les données antérieures à aujourd'hui (bucket J-1)
-    df["date_dt"] = pd.to_datetime(df["date"], errors="coerce")
-    today = datetime.utcnow().date()
-    df = df[df["date_dt"].dt.date < today]
-    if df.empty:
-        logging.error("[ERROR] Aucune donnée complète (J-1 ou antérieure) disponible.")
-        print("[ERROR] Pas de données pour J-1 ou antérieures.")
         return
 
     # dropna
@@ -93,7 +84,7 @@ def main():
         custom_threshold = None
 
     X = df[COLUMNS_ORDER].values.astype(float)
-    probs = model.predict_proba(X)[:, 1]
+    probs = model.predict_proba(X)[:,1]
 
     out_rows = []
     for i, row in df.iterrows():
@@ -101,13 +92,18 @@ def main():
         p   = probs[i]
         out_rows.append([sym, p])
 
-    df_out = pd.DataFrame(out_rows, columns=["symbol", "prob"])
+    df_out = pd.DataFrame(out_rows, columns=["symbol","prob"])
     df_out.sort_values("symbol", inplace=True)
     df_out.reset_index(drop=True, inplace=True)
 
     df_out.to_csv(OUTPUT_PROBA_CSV, index=False)
     logging.info(f"[OK] => daily_probabilities.csv => {len(df_out)} tokens.")
     print(f"[OK] => daily_probabilities.csv => {len(df_out)} tokens.")
+
+    # --- AJOUT : Enregistrement des probabilités par token dans le log ---
+    logging.info("Résultats des probabilités par token:")
+    for idx, row in df_out.iterrows():
+        logging.info(f"Token: {row['symbol']} - Probabilité: {row['prob']:.4f}")
 
     logging.info("=== END ml_decision (BATCH) ===")
 
