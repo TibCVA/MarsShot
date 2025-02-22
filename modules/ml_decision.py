@@ -55,26 +55,34 @@ def main():
         print("[WARN] empty daily_inference_data.csv => skip.")
         return
 
-    needed_cols = COLUMNS_ORDER + ["symbol","date"]
+    needed_cols = COLUMNS_ORDER + ["symbol", "date"]
     missing = [col for col in needed_cols if col not in df.columns]
     if missing:
         logging.error(f"[ERROR] Colonnes manquantes => {missing}")
         print(f"[ERROR] missing cols => {missing}")
         return
 
-    # dropna
+    # Conversion de "date" en datetime et filtrage sur les données complètes (bucket J-1)
+    df["date_dt"] = pd.to_datetime(df["date"], errors="coerce")
+    today = datetime.utcnow().date()
+    df = df[df["date_dt"].dt.date < today]
+    if df.empty:
+        logging.error("[ERROR] Aucune donnée complète (J-1 ou antérieure) disponible.")
+        print("[ERROR] Pas de données pour J-1 ou antérieures.")
+        return
+
+    # Suppression des lignes où les features sont NaN
     before = len(df)
     df.dropna(subset=COLUMNS_ORDER, inplace=True)
     after = len(df)
     if after < before:
         logging.warning(f"[WARN] Drop {before - after} lignes => NaN dans features")
-
     if df.empty:
         logging.warning("[WARN] plus aucune ligne => skip.")
         print("[WARN] no data => skip.")
         return
 
-    # Charger le modèle
+    # Chargement du modèle
     loaded = joblib.load(MODEL_FILE)
     if isinstance(loaded, tuple):
         model, custom_threshold = loaded
@@ -84,15 +92,12 @@ def main():
         custom_threshold = None
 
     X = df[COLUMNS_ORDER].values.astype(float)
-    probs = model.predict_proba(X)[:,1]
+    probs = model.predict_proba(X)[:, 1]
+    df["prob"] = probs  # On ajoute la probabilité à chaque ligne
 
-    out_rows = []
-    for i, row in df.iterrows():
-        sym = row["symbol"]
-        p   = probs[i]
-        out_rows.append([sym, p])
-
-    df_out = pd.DataFrame(out_rows, columns=["symbol","prob"])
+    # Groupement par token pour obtenir uniquement la dernière ligne (la plus récente) par token
+    df_last_per_token = df.sort_values("date_dt").groupby("symbol", as_index=False).tail(1)
+    df_out = df_last_per_token[["symbol", "prob"]].copy()
     df_out.sort_values("symbol", inplace=True)
     df_out.reset_index(drop=True, inplace=True)
 
@@ -100,10 +105,10 @@ def main():
     logging.info(f"[OK] => daily_probabilities.csv => {len(df_out)} tokens.")
     print(f"[OK] => daily_probabilities.csv => {len(df_out)} tokens.")
 
-    # --- AJOUT : Enregistrement des probabilités par token dans le log ---
-    logging.info("Résultats des probabilités par token:")
+    # Enregistrement dans le log uniquement de la dernière probabilité (du bucket J-1) pour chaque token
+    logging.info("Probabilités utilisées (bucket J-1) par token:")
     for idx, row in df_out.iterrows():
-        logging.info(f"Token: {row['symbol']} - Probabilité: {row['prob']:.4f}")
+        logging.info(f"Token: {row['symbol']} - Probabilité (J-1): {row['prob']:.4f}")
 
     logging.info("=== END ml_decision (BATCH) ===")
 
