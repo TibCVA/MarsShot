@@ -142,8 +142,8 @@ def daily_update_live(state, bexec):
         else:
             logging.info(f"[DAILY SELL] skip => {asset}, condition non remplie.")
 
-    logging.info("[DAILY UPDATE] Wait 300s (5min) to let sells finalize & USDT free up.")
-    time.sleep(300)
+    logging.info("[DAILY UPDATE] Wait 180s (3min) to let sells finalize & USDT free up.")
+    time.sleep(180)
 
     try:
         account_info = bexec.client.get_account()
