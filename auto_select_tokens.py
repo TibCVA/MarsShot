@@ -218,7 +218,7 @@ def get_daily_close_lunar(token, config):
             else:
                 return None
 
-def verify_token_consistency(tokens, config, binance_client, threshold=0.05):
+def verify_token_consistency(tokens, config, binance_client, threshold=0.1):
     """
     Vérifie que le daily close J-1 entre Binance et LunarCrush ne diffère pas de plus de threshold (5% par défaut).
     Exclut les tokens pour lesquels l'écart est supérieur ou pour lesquels LunarCrush renvoie une erreur.
