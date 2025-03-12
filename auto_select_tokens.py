@@ -8,7 +8,8 @@ Sélectionne automatiquement les 60 meilleurs tokens "moonshot" basés sur
 leur performance 24h, 7j et 30j, avec des pondérations plus fortes sur
 le 7 jours et le 30 jours, pour un effet momentum + tendance.
 Ensuite, une vérification de cohérence des daily close J-1 entre Binance et LunarCrush
-est réalisée : si l’écart est supérieur à 5%, le token est exclu.
+est réalisée : si l’écart est supérieur à 5% ou si LunarCrush renvoie une erreur
+indiquant que le token n'existe pas, le token est exclu.
 """
 
 import os
@@ -34,12 +35,12 @@ def fetch_usdt_spot_pairs(client):
     pairs = []
     for s in all_symbols:
         if s.get("status") == "TRADING" and s.get("quoteAsset") == "USDT":
-            base = s.get("baseAsset","")
+            base = s.get("baseAsset", "")
             # Exclusion: LEVERAGED tokens
-            if any(x in base for x in ["UP","DOWN","BULL","BEAR"]):
+            if any(x in base for x in ["UP", "DOWN", "BULL", "BEAR"]):
                 continue
             # Exclusion: stablecoins
-            if base in ["USDC","BUSD","TUSD","USDT"]:
+            if base in ["USDC", "BUSD", "TUSD", "USDT"]:
                 continue
             pairs.append(s["symbol"])
     return pairs
@@ -50,8 +51,8 @@ def get_24h_change(client, symbol):
     """
     try:
         tick = client.get_ticker(symbol=symbol)
-        pc_str = tick.get("priceChangePercent","0")
-        return float(pc_str)/100.0
+        pc_str = tick.get("priceChangePercent", "0")
+        return float(pc_str) / 100.0
     except:
         return 0.0
 
@@ -60,7 +61,7 @@ def get_kline_change(client, symbol, days=7):
     Retourne la variation sur 'days' jours (ex: +10% => 0.10)
     en se basant sur des klines journalières. 0.0 si problème ou data insuffisante.
     """
-    limit = days+5
+    limit = days + 5
     try:
         klines = client.get_klines(
             symbol=symbol,
@@ -73,7 +74,7 @@ def get_kline_change(client, symbol, days=7):
         old_close  = float(klines[-days-1][4])
         if old_close <= 0:
             return 0.0
-        return (last_close - old_close)/old_close
+        return (last_close - old_close) / old_close
     except:
         return 0.0
 
@@ -84,7 +85,7 @@ def compute_token_score(p24, p7, p30):
       - 30% sur la perf 30 jours (tendance plus durable)
       - 20% sur la perf 24h (volatilité court terme)
     """
-    return 0.8*p7 + 0*p30 + 0.2*p24
+    return 0.8 * p7 + 0 * p30 + 0.2 * p24
 
 def select_top_tokens(client, top_n=60):
     """
@@ -102,9 +103,9 @@ def select_top_tokens(client, top_n=60):
         if (count % 20) == 0:
             time.sleep(1)
 
-        p24  = get_24h_change(client, sym)
-        p7   = get_kline_change(client, sym, 7)
-        p30  = get_kline_change(client, sym, 30)
+        p24 = get_24h_change(client, sym)
+        p7  = get_kline_change(client, sym, 7)
+        p30 = get_kline_change(client, sym, 30)
         score = compute_token_score(p24, p7, p30)
         results.append((sym, score))
 
@@ -135,28 +136,35 @@ def update_config_tokens_daily(new_tokens):
         yaml.dump(cfg, f, sort_keys=False)
     logging.info(f"[update_config_tokens_daily] => {len(new_tokens)} tokens => {new_tokens}")
 
-# --- Nouvelle section pour la vérification de cohérence des daily close ---
+# --- Nouvelle section pour la vérification de cohérence des daily close avec mécanisme de retry ---
 
 def get_daily_close_binance(token, binance_client):
     """
-    Récupère le prix de clôture J-1 depuis Binance pour token (en USDT).
+    Récupère le prix de clôture J-1 depuis Binance pour token (en USDT) avec retry progressif.
     """
     symbol = token + "USDT"
-    try:
-        klines = binance_client.get_klines(symbol=symbol, interval=Client.KLINE_INTERVAL_1DAY, limit=2)
-        if len(klines) < 2:
-            logging.warning(f"Pas assez de données pour {symbol} sur Binance.")
-            return None
-        # Le dernier kline est en cours, l'avant-dernier correspond à J-1.
-        yesterday_close = float(klines[-2][4])
-        return yesterday_close
-    except Exception as e:
-        logging.error(f"Erreur get_daily_close_binance pour {token}: {e}")
-        return None
+    for attempt in range(1, 4):
+        try:
+            klines = binance_client.get_klines(symbol=symbol, interval=Client.KLINE_INTERVAL_1DAY, limit=2)
+            if len(klines) < 2:
+                logging.warning(f"Pas assez de données pour {symbol} sur Binance.")
+                return None
+            # Le dernier kline est en cours, l'avant-dernier correspond à J-1.
+            yesterday_close = float(klines[-2][4])
+            return yesterday_close
+        except Exception as e:
+            logging.error(f"Erreur get_daily_close_binance pour {token} (tentative {attempt}): {e}")
+            if attempt == 1:
+                time.sleep(10)
+            elif attempt == 2:
+                time.sleep(60)
+            else:
+                return None
 
 def get_daily_close_lunar(token, config):
     """
-    Récupère le prix de clôture J-1 depuis LunarCrush pour token.
+    Récupère le prix de clôture J-1 depuis LunarCrush pour token avec retry progressif.
+    Si l'API renvoie une erreur indiquant que le token n'existe pas, retourne immédiatement None.
     """
     LUNAR_API_KEY = config.get("lunarcrush", {}).get("api_key", "")
     if not LUNAR_API_KEY:
@@ -174,29 +182,46 @@ def get_daily_close_lunar(token, config):
         "start": start_ts,
         "end": end_ts
     }
-    try:
-        r = requests.get(url, params=params, timeout=30)
-        if r.status_code != 200:
-            logging.warning(f"LunarCrush API status code {r.status_code} pour {token}")
-            return None
-        data = r.json().get("data", [])
-        if not data:
-            logging.warning(f"Aucune donnée LunarCrush pour {token}")
-            return None
-        # On prend le dernier candle retourné
-        candle = data[-1]
-        close = candle.get("close")
-        if close is None:
-            return None
-        return float(close)
-    except Exception as e:
-        logging.error(f"Erreur get_daily_close_lunar pour {token}: {e}")
-        return None
+    for attempt in range(1, 4):
+        try:
+            r = requests.get(url, params=params, timeout=30)
+            if r.status_code != 200:
+                logging.warning(f"LunarCrush API status code {r.status_code} pour {token}")
+                raise Exception("Status code not 200")
+            json_response = r.json()
+            if "error" in json_response:
+                error_msg = json_response["error"]
+                logging.warning(f"LunarCrush renvoie une erreur pour {token}: {error_msg}")
+                # Si l'erreur indique que le token n'existe pas, pas de retry
+                if "n'existe pas" in error_msg.lower():
+                    return None
+                else:
+                    raise Exception("Erreur dans la réponse")
+            data = json_response.get("data", [])
+            if not data:
+                logging.warning(f"Aucune donnée LunarCrush pour {token}")
+                raise Exception("Pas de données")
+            candle = data[-1]
+            close = candle.get("close")
+            if close is None:
+                raise Exception("Pas de close value")
+            return float(close)
+        except Exception as e:
+            logging.error(f"Erreur get_daily_close_lunar pour {token} (tentative {attempt}): {e}")
+            # Si l'erreur est non réessayable, on retourne immédiatement None
+            if "n'existe pas" in str(e).lower():
+                return None
+            if attempt == 1:
+                time.sleep(10)
+            elif attempt == 2:
+                time.sleep(60)
+            else:
+                return None
 
 def verify_token_consistency(tokens, config, binance_client, threshold=0.05):
     """
     Vérifie que le daily close J-1 entre Binance et LunarCrush ne diffère pas de plus de threshold (5% par défaut).
-    Exclut les tokens pour lesquels l'écart est supérieur.
+    Exclut les tokens pour lesquels l'écart est supérieur ou pour lesquels LunarCrush renvoie une erreur.
     """
     verified_tokens = []
     for token in tokens:
@@ -249,5 +274,5 @@ def main():
     update_config_tokens_daily(verified_tokens)
     logging.info("[OK] auto_select_tokens => config.yaml updated")
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
