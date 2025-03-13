@@ -8,8 +8,9 @@ Sélectionne automatiquement les 60 meilleurs tokens "moonshot" basés sur
 leur performance 24h, 7j et 30j, avec des pondérations plus fortes sur
 le 7 jours et le 30 jours, pour un effet momentum + tendance.
 Ensuite, une vérification de cohérence des daily close J-1 entre Binance et LunarCrush
-est réalisée : si l’écart est supérieur à 5% ou si LunarCrush renvoie une erreur
-indiquant que le token n'existe pas, le token est exclu.
+est réalisée : si l’écart est supérieur à 5% (ou ici 10% comme seuil choisi) 
+ou si LunarCrush renvoie une erreur indiquant que le token n'existe pas, le token est exclu.
+Le résultat final (la liste vérifiée) est écrit dans la clé tokens_daily du fichier de config.
 """
 
 import os
@@ -28,7 +29,7 @@ LOG_FILE   = "auto_select_tokens.log"
 def fetch_usdt_spot_pairs(client):
     """
     Récupère toutes les paires Spot en USDT sur Binance,
-    en filtrant les tokens indésirables (UP,DOWN,BULL,BEAR, stablecoins).
+    en filtrant les tokens indésirables (UP, DOWN, BULL, BEAR, stablecoins).
     """
     info = client.get_exchange_info()
     all_symbols = info.get("symbols", [])
@@ -36,10 +37,10 @@ def fetch_usdt_spot_pairs(client):
     for s in all_symbols:
         if s.get("status") == "TRADING" and s.get("quoteAsset") == "USDT":
             base = s.get("baseAsset", "")
-            # Exclusion: LEVERAGED tokens
+            # Exclusion : tokens leveragés
             if any(x in base for x in ["UP", "DOWN", "BULL", "BEAR"]):
                 continue
-            # Exclusion: stablecoins
+            # Exclusion : stablecoins
             if base in ["USDC", "BUSD", "TUSD", "USDT"]:
                 continue
             pairs.append(s["symbol"])
@@ -47,7 +48,7 @@ def fetch_usdt_spot_pairs(client):
 
 def get_24h_change(client, symbol):
     """
-    Retourne la variation sur 24h en % (ex: +5% => 0.05), ou 0.0 si problème.
+    Retourne la variation sur 24h en % (ex: +5% => 0.05), ou 0.0 en cas de problème.
     """
     try:
         tick = client.get_ticker(symbol=symbol)
@@ -59,7 +60,7 @@ def get_24h_change(client, symbol):
 def get_kline_change(client, symbol, days=7):
     """
     Retourne la variation sur 'days' jours (ex: +10% => 0.10)
-    en se basant sur des klines journalières. 0.0 si problème ou data insuffisante.
+    en se basant sur des klines journalières. Retourne 0.0 si data insuffisante.
     """
     limit = days + 5
     try:
@@ -80,18 +81,17 @@ def get_kline_change(client, symbol, days=7):
 
 def compute_token_score(p24, p7, p30):
     """
-    Nouveau scoring "moonshot" :
-      - 50% sur la perf 7 jours (momentum hebdo)
-      - 30% sur la perf 30 jours (tendance plus durable)
-      - 20% sur la perf 24h (volatilité court terme)
+    Scoring "moonshot" :
+      - 50% sur la performance sur 7 jours (momentum hebdo)
+      - 30% sur la performance sur 30 jours (tendance durable)
+      - 20% sur la performance sur 24h (volatilité court terme)
     """
     return 0.8 * p7 + 0 * p30 + 0.2 * p24
 
 def select_top_tokens(client, top_n=60):
     """
-    Récupère la liste de toutes les paires USDT, calcule la perf 24h, 7j, 30j,
-    et applique compute_token_score pour ranker. On renvoie les top_n tokens
-    sous forme de baseAsset (ex: BNB si BNBUSDT).
+    Sélectionne les top_n tokens (basés sur leur baseAsset, ex: BNB pour BNBUSDT)
+    en calculant leur score à partir des performances sur 24h, 7j et 30j.
     """
     all_pairs = fetch_usdt_spot_pairs(client)
     logging.info(f"[AUTO] fetch_usdt_spot_pairs => {len(all_pairs)} pairs")
@@ -100,22 +100,19 @@ def select_top_tokens(client, top_n=60):
     count = 0
     for sym in all_pairs:
         count += 1
-        if (count % 20) == 0:
+        if count % 20 == 0:
             time.sleep(1)
-
         p24 = get_24h_change(client, sym)
         p7  = get_kline_change(client, sym, 7)
         p30 = get_kline_change(client, sym, 30)
         score = compute_token_score(p24, p7, p30)
         results.append((sym, score))
-
-    # On trie du plus grand score au plus faible
     results.sort(key=lambda x: x[1], reverse=True)
     top = results[:top_n]
 
-    # On renvoie la baseAsset (ex: BNB pour BNBUSDT)
+    # On extrait la partie baseAsset (ex: BNB pour BNBUSDT)
     bases = []
-    for sym, sc in top:
+    for sym, _ in top:
         if sym.endswith("USDT"):
             base = sym.replace("USDT", "")
             bases.append(base)
@@ -123,7 +120,7 @@ def select_top_tokens(client, top_n=60):
 
 def update_config_tokens_daily(new_tokens):
     """
-    Met à jour la clé 'tokens_daily' dans config.yaml en y mettant new_tokens.
+    Met à jour la clé 'tokens_daily' dans config.yaml avec new_tokens.
     """
     if not os.path.exists(CONFIG_YML):
         logging.warning(f"[update_config_tokens_daily] {CONFIG_YML} introuvable")
@@ -131,12 +128,11 @@ def update_config_tokens_daily(new_tokens):
     with open(CONFIG_YML, "r") as f:
         cfg = yaml.safe_load(f)
     cfg["tokens_daily"] = new_tokens
-
     with open(CONFIG_YML, "w") as f:
         yaml.dump(cfg, f, sort_keys=False)
     logging.info(f"[update_config_tokens_daily] => {len(new_tokens)} tokens => {new_tokens}")
 
-# --- Nouvelle section pour la vérification de cohérence des daily close avec mécanisme de retry ---
+# --- Vérification de cohérence des daily close avec mécanisme de retry ---
 
 def get_daily_close_binance(token, binance_client):
     """
@@ -149,7 +145,7 @@ def get_daily_close_binance(token, binance_client):
             if len(klines) < 2:
                 logging.warning(f"Pas assez de données pour {symbol} sur Binance.")
                 return None
-            # Le dernier kline est en cours, l'avant-dernier correspond à J-1.
+            # L'avant-dernier kline correspond à J-1 (le dernier est en cours)
             yesterday_close = float(klines[-2][4])
             return yesterday_close
         except Exception as e:
@@ -208,7 +204,6 @@ def get_daily_close_lunar(token, config):
             return float(close)
         except Exception as e:
             logging.error(f"Erreur get_daily_close_lunar pour {token} (tentative {attempt}): {e}")
-            # Si l'erreur est non réessayable, on retourne immédiatement None
             if "n'existe pas" in str(e).lower():
                 return None
             if attempt == 1:
@@ -220,8 +215,8 @@ def get_daily_close_lunar(token, config):
 
 def verify_token_consistency(tokens, config, binance_client, threshold=0.1):
     """
-    Vérifie que le daily close J-1 entre Binance et LunarCrush ne diffère pas de plus de threshold (5% par défaut).
-    Exclut les tokens pour lesquels l'écart est supérieur ou pour lesquels LunarCrush renvoie une erreur.
+    Vérifie que le daily close J-1 entre Binance et LunarCrush ne diffère pas de plus de threshold.
+    Exclut les tokens dont l'écart est supérieur ou dont une donnée manque.
     """
     verified_tokens = []
     for token in tokens:
@@ -270,9 +265,10 @@ def main():
     verified_tokens = verify_token_consistency(best60, config, client)
     logging.info(f"[AUTO] Tokens vérifiés et retenus: {verified_tokens}")
 
-    # Mise à jour de la configuration avec la liste validée (peut contenir moins de 60 tokens)
+    # Mise à jour de la configuration avec la liste vérifiée (tokens_daily)
     update_config_tokens_daily(verified_tokens)
     logging.info("[OK] auto_select_tokens => config.yaml updated")
+    print("[OK] auto_select_tokens => config.yaml updated")
 
 if __name__ == "__main__":
     main()
