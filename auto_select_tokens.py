@@ -17,10 +17,6 @@ from datetime import datetime, timedelta
 
 from binance.client import Client
 
-BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-CONFIG_YML = os.path.join(BASE_DIR, "config.yaml")
-LOG_FILE   = "auto_select_tokens.log"
-
 def fetch_usdt_spot_pairs(client):
     """
     Récupère toutes les paires Spot en USDT sur Binance,
@@ -31,7 +27,7 @@ def fetch_usdt_spot_pairs(client):
     pairs = []
     for s in all_symbols:
         if s.get("status") == "TRADING" and s.get("quoteAsset") == "USDT":
-            base = s.get("baseAsset","")
+            base = s.get("baseAsset", "")
             # Exclusion: LEVERAGED tokens
             if any(x in base for x in ["UP", "DOWN", "BULL", "BEAR"]):
                 continue
@@ -98,17 +94,16 @@ def select_top_tokens(client, top_n=60):
         if (count % 20) == 0:
             time.sleep(1)
 
-        p24   = get_24h_change(client, sym)
-        p7    = get_kline_change(client, sym, 7)
-        p30   = get_kline_change(client, sym, 30)
-        score = compute_token_score(p24, p7, p30)
+        p24  = get_24h_change(client, sym)
+        p7   = get_kline_change(client, sym, 7)
+        p30  = get_kline_change(client, sym, 30)
+        score= compute_token_score(p24, p7, p30)
         results.append((sym, score))
 
     # On trie du plus grand score au plus faible
     results.sort(key=lambda x: x[1], reverse=True)
     top = results[:top_n]
 
-    # On renvoie la baseAsset (ex. BNB si BNBUSDT)
     bases = []
     for sym, sc in top:
         if sym.endswith("USDT"):
@@ -120,6 +115,7 @@ def update_config_tokens_daily(new_tokens):
     """
     Met à jour la clé 'tokens_daily' dans config.yaml en y mettant new_tokens.
     """
+    CONFIG_YML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
     if not os.path.exists(CONFIG_YML):
         logging.warning(f"[update_config_tokens_daily] {CONFIG_YML} introuvable")
         return
@@ -132,31 +128,17 @@ def update_config_tokens_daily(new_tokens):
     logging.info(f"[update_config_tokens_daily] => {len(new_tokens)} tokens => {new_tokens}")
 
 def main():
-    logging.basicConfig(
-        filename=LOG_FILE,
-        filemode="a",
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s"
-    )
-    logging.info("=== START auto_select_tokens ===")
-
+    CONFIG_YML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
     if not os.path.exists(CONFIG_YML):
-        logging.error(f"[ERROR] {CONFIG_YML} introuvable")
-        print(f"[ERROR] {CONFIG_YML} introuvable")
+        logging.error(f"[ERROR] {CONFIG_YML} introuvable.")
         return
 
     with open(CONFIG_YML, "r") as f:
         config = yaml.safe_load(f)
     key = config["binance_api"]["api_key"]
     sec = config["binance_api"]["api_secret"]
-    if not key or not sec:
-        logging.error("[ERROR] Clé/secret binance manquante.")
-        print("[ERROR] Clé/secret binance manquante.")
-        return
-
     client = Client(key, sec)
 
-    # On veut désormais top 60 => fix l'appel
     best60 = select_top_tokens(client, top_n=60)
     logging.info(f"[AUTO] best60 => {best60}")
 
@@ -164,7 +146,6 @@ def main():
 
     logging.info("=== DONE auto_select_tokens ===")
     print("[OK] auto_select_tokens => config.yaml updated")
-
 
 if __name__ == "__main__":
     main()
