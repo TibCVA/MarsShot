@@ -197,13 +197,30 @@ def verify_token_identity(symbol: str, binance_client: BinanceClient, lunar_df: 
     try:
         # On construit le ticker Binance en ajoutant "USDT" (ex: "BANANAUSDT")
         binance_symbol = symbol.upper() + "USDT"
-        ticker = binance_client.get_symbol_ticker(symbol=binance_symbol)
-        binance_price = float(ticker.get("price", 0))
+        try:
+            ticker = binance_client.get_symbol_ticker(symbol=binance_symbol)
+        except SyntaxError as se:
+            logging.warning(f"[VERIFY] SyntaxError pour {symbol} lors de la récupération du ticker: {se}")
+            return False
+        except Exception as e:
+            logging.warning(f"[VERIFY] Erreur pour récupérer le ticker de {symbol}: {e}")
+            return False
+
+        if not isinstance(ticker, dict) or "price" not in ticker:
+            logging.warning(f"[VERIFY] Réponse ticker invalide pour {binance_symbol}: {ticker}")
+            return False
+
+        try:
+            binance_price = float(ticker["price"])
+        except Exception as e:
+            logging.warning(f"[VERIFY] Erreur de conversion du prix Binance pour {binance_symbol}: {e}")
+            return False
+
         if binance_price == 0:
             logging.warning(f"[VERIFY] Prix Binance pour {binance_symbol} est 0.")
             return False
     except Exception as e:
-        logging.warning(f"[VERIFY] Erreur pour récupérer le prix Binance de {symbol}: {e}")
+        logging.warning(f"[VERIFY] Erreur inattendue pour {symbol} : {e}")
         return False
 
     try:
@@ -212,8 +229,14 @@ def verify_token_identity(symbol: str, binance_client: BinanceClient, lunar_df: 
         logging.warning(f"[VERIFY] Erreur pour extraire le prix LunarCrush pour {symbol}: {e}")
         return False
 
-    if abs(binance_price - lunar_price) / binance_price > tolerance:
-        logging.warning(f"[VERIFY] Incohérence pour {symbol} : Binance={binance_price} vs LunarCrush={lunar_price}")
+    try:
+        relative_diff = abs(binance_price - lunar_price) / binance_price
+    except Exception as e:
+        logging.warning(f"[VERIFY] Erreur lors du calcul de la différence pour {symbol}: {e}")
+        return False
+
+    if relative_diff > tolerance:
+        logging.warning(f"[VERIFY] Incohérence pour {symbol} : Binance={binance_price} vs LunarCrush={lunar_price} (diff={relative_diff:.2f})")
         return False
 
     return True
@@ -233,7 +256,7 @@ try:
             logging.warning(f"[SKIP] => {sym}, got None/empty => partial continue.")
             continue
 
-        # Nouvelle vérification d'identité par comparaison des prix
+        # Vérification d'identité : comparaison des prix entre Binance et LunarCrush
         if not verify_token_identity(sym, binance_client, df_, tolerance=0.2):
             logging.warning(f"[SKIP] => {sym} ignoré car les données Binance et LunarCrush ne correspondent pas.")
             continue
