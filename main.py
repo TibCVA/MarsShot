@@ -228,16 +228,16 @@ def main():
     logging.info("[MAIN] TradeExecutor initialized.")
     tz_paris = pytz.timezone("Europe/Paris")
 
-    # Daily update live fixée à 01h05 UTC
+    # Daily update live fixée à 01h20 UTC
     DAILY_UPDATE_HOUR = 1
-    DAILY_UPDATE_MIN = 05
+    DAILY_UPDATE_MIN = 15
 
     while True:
         try:
             now = datetime.datetime.now(tz_paris)
             current_ts = time.time()
 
-            # Daily update live à 01h05 UTC
+            # Daily update live à 01h20 UTC
             if now.hour == DAILY_UPDATE_HOUR and now.minute == DAILY_UPDATE_MIN and not state.get("did_daily_update_today", False):
                 logging.info("[MAIN] => daily_update_live (scheduled update).")
                 run_auto_select_once_per_day(state)
