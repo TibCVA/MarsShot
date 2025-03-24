@@ -83,32 +83,74 @@ def main():
         return
 
     # Chargement du modèle
-    loaded = joblib.load(MODEL_FILE)
-    if isinstance(loaded, tuple):
-        model, custom_threshold = loaded
-        logging.info(f"[ML_DECISION] pipeline + threshold={custom_threshold}")
-    else:
-        model = loaded
-        custom_threshold = None
+    try:
+        loaded = joblib.load(MODEL_FILE)
+        logging.info(f"[ML_DECISION] Modèle chargé. Type: {type(loaded)}")
+        
+        # Cas 1: Modèle Original (tuple)
+        if isinstance(loaded, tuple) and len(loaded) == 2:
+            model, custom_threshold = loaded
+            logging.info(f"[ML_DECISION] Modèle détecté comme tuple (original) + threshold={custom_threshold}")
+        
+        # Cas 2: Modèle Business/Business3 (dictionnaire avec pipeline)
+        elif isinstance(loaded, dict) and "pipeline" in loaded:
+            model = loaded["pipeline"]
+            # Récupération des seuils (pour information)
+            buy_threshold = loaded.get("thresholds", {}).get("high_precision", None)
+            sell_threshold = loaded.get("thresholds", {}).get("profit_taking", None)
+            logging.info(f"[ML_DECISION] Modèle détecté comme dictionnaire (business) avec seuils: achat={buy_threshold}, vente={sell_threshold}")
+            custom_threshold = buy_threshold
+        
+        # Cas 3: Pipeline direct
+        elif hasattr(loaded, 'predict_proba') or hasattr(loaded, 'named_steps'):
+            model = loaded
+            custom_threshold = None
+            logging.info(f"[ML_DECISION] Modèle détecté comme pipeline direct")
+        
+        # Cas non géré
+        else:
+            logging.error(f"[ML_DECISION] Structure de modèle non reconnue: {type(loaded)}")
+            if isinstance(loaded, dict):
+                logging.error(f"[ML_DECISION] Clés disponibles: {list(loaded.keys())}")
+            print("[ERROR] Structure de modèle non reconnue")
+            return
+        
+        # Vérification du pipeline
+        if not hasattr(model, 'predict_proba'):
+            logging.error("[ML_DECISION] Le modèle n'a pas de méthode predict_proba")
+            print("[ERROR] Le modèle ne peut pas faire de prédictions")
+            return
+            
+    except Exception as e:
+        logging.error(f"[ERROR] Erreur lors du chargement du modèle: {str(e)}")
+        print(f"[ERROR] Erreur lors du chargement du modèle: {str(e)}")
+        return
 
-    X = df[COLUMNS_ORDER].values.astype(float)
-    probs = model.predict_proba(X)[:, 1]
-    df["prob"] = probs  # On ajoute la probabilité à chaque ligne
-
-    # Groupement par token pour obtenir uniquement la dernière ligne (la plus récente) par token
-    df_last_per_token = df.sort_values("date_dt").groupby("symbol", as_index=False).tail(1)
-    df_out = df_last_per_token[["symbol", "prob"]].copy()
-    df_out.sort_values("symbol", inplace=True)
-    df_out.reset_index(drop=True, inplace=True)
-
-    df_out.to_csv(OUTPUT_PROBA_CSV, index=False)
-    logging.info(f"[OK] => daily_probabilities.csv => {len(df_out)} tokens.")
-    print(f"[OK] => daily_probabilities.csv => {len(df_out)} tokens.")
-
-    # Enregistrement dans le log uniquement de la dernière probabilité (du bucket J-1) pour chaque token
-    logging.info("Probabilités utilisées (bucket J-1) par token:")
-    for idx, row in df_out.iterrows():
-        logging.info(f"Token: {row['symbol']} - Probabilité (J-1): {row['prob']:.4f}")
+    # Prédiction
+    try:
+        X = df[COLUMNS_ORDER].values.astype(float)
+        probs = model.predict_proba(X)[:, 1]
+        df["prob"] = probs  # On ajoute la probabilité à chaque ligne
+        
+        # Groupement par token pour obtenir uniquement la dernière ligne (la plus récente) par token
+        df_last_per_token = df.sort_values("date_dt").groupby("symbol", as_index=False).tail(1)
+        df_out = df_last_per_token[["symbol", "prob"]].copy()
+        df_out.sort_values("symbol", inplace=True)
+        df_out.reset_index(drop=True, inplace=True)
+        
+        df_out.to_csv(OUTPUT_PROBA_CSV, index=False)
+        logging.info(f"[OK] => daily_probabilities.csv => {len(df_out)} tokens.")
+        print(f"[OK] => daily_probabilities.csv => {len(df_out)} tokens.")
+        
+        # Enregistrement dans le log uniquement de la dernière probabilité (du bucket J-1) pour chaque token
+        logging.info("Probabilités utilisées (bucket J-1) par token:")
+        for idx, row in df_out.iterrows():
+            logging.info(f"Token: {row['symbol']} - Probabilité (J-1): {row['prob']:.4f}")
+            
+    except Exception as e:
+        logging.error(f"[ERROR] Erreur lors des prédictions: {str(e)}")
+        print(f"[ERROR] Erreur lors des prédictions: {str(e)}")
+        return
 
     logging.info("=== END ml_decision (BATCH) ===")
 
