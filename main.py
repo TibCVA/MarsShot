@@ -229,8 +229,8 @@ def main():
     tz_paris = pytz.timezone("Europe/Paris")
 
     # Daily update live fixée à 01h20 UTC
-    DAILY_UPDATE_HOUR = 1
-    DAILY_UPDATE_MIN = 15
+    DAILY_UPDATE_HOUR = 2
+    DAILY_UPDATE_MIN = 10
 
     while True:
         try:
