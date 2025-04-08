@@ -228,8 +228,8 @@ def main():
     logging.info("[MAIN] TradeExecutor initialized.")
     tz_paris = pytz.timezone("Europe/Paris")
 
-    # Daily update live fixée à 01h20 UTC
-    DAILY_UPDATE_HOUR = 2
+    # Daily update live fixée à 00h10 UTC
+    DAILY_UPDATE_HOUR = 0
     DAILY_UPDATE_MIN = 10
 
     while True:
