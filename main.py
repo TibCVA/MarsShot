@@ -228,8 +228,8 @@ def main():
     logging.info("[MAIN] TradeExecutor initialized.")
     tz_paris = pytz.timezone("Europe/Paris")
 
-    # Daily update live fixée à 00h10 UTC
-    DAILY_UPDATE_HOUR = 0
+    # Daily update live fixée à 02h10 UTC
+    DAILY_UPDATE_HOUR = 2
     DAILY_UPDATE_MIN = 10
 
     while True:
@@ -237,7 +237,7 @@ def main():
             now = datetime.datetime.now(tz_paris)
             current_ts = time.time()
 
-            # Daily update live à 01h20 UTC
+            # Daily update live à 02h10 UTC
             if now.hour == DAILY_UPDATE_HOUR and now.minute == DAILY_UPDATE_MIN and not state.get("did_daily_update_today", False):
                 logging.info("[MAIN] => daily_update_live (scheduled update).")
                 run_auto_select_once_per_day(state)
@@ -246,7 +246,7 @@ def main():
                 save_state(state)
 
             # Réinitialisation du flag de daily update à 00h00 UTC
-            if now.hour == 0 and now.minute < 5:
+            if now.hour == 2 and now.minute < 5:
                 if state.get("did_daily_update_today", False):
                     logging.info("[MAIN] Reset daily update flag for new day.")
                     state["did_daily_update_today"] = False
