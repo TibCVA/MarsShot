@@ -61,20 +61,20 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_port(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pf = get_portfolio_state()
-    msg = f"Valeur Totale: {pf['total_value_usdt']} USDT\n\nPositions:\n"
+    msg = f"Valeur Totale: {pf['total_value_USDC']} USDC\n\nPositions:\n"
     for p in pf["positions"]:
-        msg += f"- {p['symbol']}: qty={p['qty']}, ~{p['value_usdt']} USDT\n"
+        msg += f"- {p['symbol']}: qty={p['qty']}, ~{p['value_USDC']} USDC\n"
     await update.message.reply_text(msg)
 
 async def cmd_perf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pf = get_portfolio_state()
     perf = get_performance_history()
     msg = (
-        f"Valeur Totale: {pf['total_value_usdt']} USDT\n"
+        f"Valeur Totale: {pf['total_value_USDC']} USDC\n"
         "Performance estimée:\n"
     )
     for horizon, vals in perf.items():
-        msg += f"- {horizon}: {vals['usdt']} USDT / {vals['pct']}%\n"
+        msg += f"- {horizon}: {vals['USDC']} USDC / {vals['pct']}%\n"
     await update.message.reply_text(msg)
 
 async def cmd_tokens(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -122,7 +122,7 @@ async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
     emergency_out()
     await update.message.reply_text(
-        "Toutes les positions ont été vendues en USDT (emergency out)."
+        "Toutes les positions ont été vendues en USDC (emergency out)."
     )
 
 #######################################
@@ -130,11 +130,11 @@ async def cmd_emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #######################################
 def send_portfolio_report():
     pf = get_portfolio_state()
-    txt = f"[Auto-Report]\nValeurTotale: {pf['total_value_usdt']} USDT\n"
+    txt = f"[Auto-Report]\nValeurTotale: {pf['total_value_USDC']} USDC\n"
     if pf["positions"]:
         txt += "Positions =>\n"
         for p in pf["positions"]:
-            txt += f"- {p['symbol']}: ~{p['value_usdt']} USDT\n"
+            txt += f"- {p['symbol']}: ~{p['value_USDC']} USDC\n"
     if BOT_TOKEN and CHAT_ID:
         send_telegram_message(BOT_TOKEN, CHAT_ID, txt)
 
