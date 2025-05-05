@@ -100,20 +100,20 @@ def daily_update_live(state, bexec):
 
     balances = account_info.get("balances", [])
     holdings = {}
-    usdt_balance = 0.0
+    USDC_balance = 0.0
     for b in balances:
         asset = b["asset"]
         qty = float(b["free"]) + float(b["locked"])
-        if asset.upper() == "USDT":
-            usdt_balance = qty
+        if asset.upper() == "USDC":
+            USDC_balance = qty
         elif qty > 0:
             holdings[asset] = qty
 
-    logging.info(f"[DAILY UPDATE] holdings={holdings}, usdt={usdt_balance:.2f}")
+    logging.info(f"[DAILY UPDATE] holdings={holdings}, USDC={USDC_balance:.2f}")
 
     # Phase SELL
     for asset, real_qty in list(holdings.items()):
-        if asset.upper() in ["USDT","BTC","FDUSD"]:
+        if asset.upper() in ["USDC","BTC","FDUSD"]:
             logging.info(f"[DAILY SELL] skip stable/BTC => {asset}")
             continue
         current_px = bexec.get_symbol_price(asset)
@@ -142,7 +142,7 @@ def daily_update_live(state, bexec):
         else:
             logging.info(f"[DAILY SELL] skip => {asset}, condition non remplie.")
 
-    logging.info("[DAILY UPDATE] Wait 180s (3min) to let sells finalize & USDT free up.")
+    logging.info("[DAILY UPDATE] Wait 180s (3min) to let sells finalize & USDC free up.")
     time.sleep(180)
 
     try:
@@ -152,15 +152,15 @@ def daily_update_live(state, bexec):
         return
     balances2 = account_info.get("balances", [])
     new_holdings = {}
-    new_usdt_balance = 0.0
+    new_USDC_balance = 0.0
     for b in balances2:
         asset = b["asset"]
         qty = float(b["free"]) + float(b["locked"])
-        if asset.upper() == "USDT":
-            new_usdt_balance = qty
+        if asset.upper() == "USDC":
+            new_USDC_balance = qty
         elif qty > 0:
             new_holdings[asset] = qty
-    logging.info(f"[DAILY UPDATE] After wait => holdings={new_holdings}, usdt={new_usdt_balance:.2f}")
+    logging.info(f"[DAILY UPDATE] After wait => holdings={new_holdings}, USDC={new_USDC_balance:.2f}")
 
     # Phase BUY : sélectionner les 3 meilleurs tokens (BUY si prob >= buy_threshold)
     buy_candidates = []
@@ -174,14 +174,14 @@ def daily_update_live(state, bexec):
             px_tmp = bexec.get_symbol_price(sym)
             val_tmp = px_tmp * cur_qty
             if val_tmp > MAX_VALUE_TO_SKIP_BUY:
-                logging.info(f"[DAILY BUY] skip => {sym}, already {val_tmp:.2f} USDT > {MAX_VALUE_TO_SKIP_BUY}")
+                logging.info(f"[DAILY BUY] skip => {sym}, already {val_tmp:.2f} USDC > {MAX_VALUE_TO_SKIP_BUY}")
                 continue
         buy_candidates.append((sym, p))
     buy_candidates.sort(key=lambda x: x[1], reverse=True)
     top3 = buy_candidates[:3]
     logging.info(f"[DAILY BUY SELECT] => {top3}")
-    if top3 and new_usdt_balance > 10:
-        leftover = new_usdt_balance * 0.99
+    if top3 and new_USDC_balance > 10:
+        leftover = new_USDC_balance * 0.99
         n = len(top3)
         for i, (sym, p) in enumerate(top3, start=1):
             tokens_left = n - i + 1
