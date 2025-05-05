@@ -17,16 +17,16 @@ from datetime import datetime, timedelta
 
 from binance.client import Client
 
-def fetch_usdt_spot_pairs(client):
+def fetch_USDC_spot_pairs(client):
     """
-    Récupère toutes les paires Spot en USDT sur Binance,
+    Récupère toutes les paires Spot en USDC sur Binance,
     en filtrant les tokens indésirables (UP,DOWN,BULL,BEAR, stablecoins).
     """
     info = client.get_exchange_info()
     all_symbols = info.get("symbols", [])
     pairs = []
     for s in all_symbols:
-        if s.get("status") == "TRADING" and s.get("quoteAsset") == "USDT":
+        if s.get("status") == "TRADING" and s.get("quoteAsset") == "USDC":
             base = s.get("baseAsset", "")
             # Exclusion: LEVERAGED tokens
             if any(x in base for x in ["UP", "DOWN", "BULL", "BEAR"]):
@@ -81,11 +81,11 @@ def compute_token_score(p24, p7, p30):
 
 def select_top_tokens(client, top_n=60):
     """
-    Récupère la liste de toutes les paires USDT, calcule la perf 24h, 7j, 30j,
+    Récupère la liste de toutes les paires USDC, calcule la perf 24h, 7j, 30j,
     et applique compute_token_score pour ranker. On renvoie les top_n.
     """
-    all_pairs = fetch_usdt_spot_pairs(client)
-    logging.info(f"[AUTO] fetch_usdt_spot_pairs => {len(all_pairs)} pairs")
+    all_pairs = fetch_USDC_spot_pairs(client)
+    logging.info(f"[AUTO] fetch_USDC_spot_pairs => {len(all_pairs)} pairs")
 
     results = []
     count = 0
@@ -106,8 +106,8 @@ def select_top_tokens(client, top_n=60):
 
     bases = []
     for sym, sc in top:
-        if sym.endswith("USDT"):
-            base = sym.replace("USDT", "")
+        if sym.endswith("USDC"):
+            base = sym.replace("USDC", "")
             bases.append(base)
     return bases
 
