@@ -37,12 +37,12 @@ PERF_FILE  = "performance_history.json"
 
 def get_portfolio_state():
     """
-    Retourne un dict {"positions": [...], "total_value_usdt": ...}
-    représentant la liste des tokens détenus (symbol, qty, value_usdt)
-    et la somme totale en USDT.
+    Retourne un dict {"positions": [...], "total_value_USDC": ...}
+    représentant la liste des tokens détenus (symbol, qty, value_USDC)
+    et la somme totale en USDC.
     
-    Pour l'affichage, seuls les tokens dont la valeur est >= 1.5 USDT
-    sont inclus, à l'exception de USDT qui est toujours affiché.
+    Pour l'affichage, seuls les tokens dont la valeur est >= 1.5 USDC
+    sont inclus, à l'exception de USDC qui est toujours affiché.
     """
     bexec = TradeExecutor(BINANCE_KEY, BINANCE_SECRET)
     info  = bexec.client.get_account()
@@ -59,23 +59,23 @@ def get_portfolio_state():
         if qty <= 0:
             continue
 
-        if asset.upper() == "USDT":
-            val_usdt = qty
+        if asset.upper() == "USDC":
+            val_USDC = qty
         else:
             px = bexec.get_symbol_price(asset)
-            val_usdt = px * qty
+            val_USDC = px * qty
 
         pos = {
             "symbol": asset,
             "qty": round(qty, 4),
-            "value_usdt": round(val_usdt, 2)
+            "value_USDC": round(val_USDC, 2)
         }
         positions_all.append(pos)
-        total_val += val_usdt
+        total_val += val_USDC
 
     positions_display = [
         pos for pos in positions_all
-        if pos["symbol"].upper() == "USDT" or pos["value_usdt"] >= 1.5
+        if pos["symbol"].upper() == "USDC" or pos["value_USDC"] >= 1.5
     ]
 
     try:
@@ -95,7 +95,7 @@ def get_portfolio_state():
 
     return {
         "positions": positions_display,
-        "total_value_usdt": round(total_val, 2)
+        "total_value_USDC": round(total_val, 2)
     }
 
 def list_tokens_tracked():
@@ -115,7 +115,7 @@ def get_trades_history():
       - buy_prob
       - sell_prob
       - days_held
-      - pnl_usdt
+      - pnl_USDC
       - pnl_pct
       - status
     """
@@ -137,7 +137,7 @@ def get_trades_history():
             logging.error(f"[TRADES] Erreur lecture {CLOSED_TRADES_FILE}: {e}")
 
     # Pour chaque trade, s'assurer que les clés attendues existent
-    expected_keys = ["symbol", "buy_prob", "sell_prob", "days_held", "pnl_usdt", "pnl_pct", "status"]
+    expected_keys = ["symbol", "buy_prob", "sell_prob", "days_held", "pnl_USDC", "pnl_pct", "status"]
     for trade in trades:
         # Pour days_held, si entry_date et exit_date sont présents, on peut calculer
         if "days_held" not in trade:
@@ -151,10 +151,10 @@ def get_trades_history():
             else:
                 trade["days_held"] = "N/A"
         # Pour les autres clés, si elles n'existent pas, on leur affecte une valeur par défaut
-        for key in ["buy_prob", "sell_prob", "pnl_usdt", "pnl_pct", "status"]:
+        for key in ["buy_prob", "sell_prob", "pnl_USDC", "pnl_pct", "status"]:
             if key not in trade:
-                # Pour pnl_usdt et pnl_pct, on met 0 ; pour les autres, "N/A"
-                trade[key] = 0 if key in ["pnl_usdt", "pnl_pct"] else "N/A"
+                # Pour pnl_USDC et pnl_pct, on met 0 ; pour les autres, "N/A"
+                trade[key] = 0 if key in ["pnl_USDC", "pnl_pct"] else "N/A"
 
     trades.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
     return trades
@@ -163,9 +163,9 @@ def get_trades_history():
 # 3) Performance
 ########################
 
-def record_portfolio_value(value_usdt):
+def record_portfolio_value(value_USDC):
     """
-    Enregistre la valeur 'value_usdt' du portefeuille dans performance_history.json.
+    Enregistre la valeur 'value_USDC' du portefeuille dans performance_history.json.
     """
     history = []
     if os.path.exists(PERF_FILE):
@@ -178,7 +178,7 @@ def record_portfolio_value(value_usdt):
     entry = {
         "timestamp": now_ts,
         "datetime": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now_ts)),
-        "value_usdt": round(value_usdt, 2)
+        "value_USDC": round(value_USDC, 2)
     }
     history.append(entry)
     history.sort(key=lambda x: x["timestamp"])
@@ -189,30 +189,30 @@ def get_performance_history():
     """
     Calcule la performance sur 1d, 7d, 30d, etc. en se basant sur performance_history.json.
     Retourne un dict du type :
-      { "1d": {"usdt": ..., "pct": ...}, "7d": {...}, "30d": {...}, "all": {...} }
+      { "1d": {"USDC": ..., "pct": ...}, "7d": {...}, "30d": {...}, "all": {...} }
     """
     if not os.path.exists(PERF_FILE):
         pf = get_portfolio_state()
-        tv = pf["total_value_usdt"]
+        tv = pf["total_value_USDC"]
         return {
-            "1d": {"usdt": tv, "pct": 0.0},
-            "7d": {"usdt": tv, "pct": 0.0},
-            "30d": {"usdt": tv, "pct": 0.0},
-            "all": {"usdt": tv, "pct": 0.0},
+            "1d": {"USDC": tv, "pct": 0.0},
+            "7d": {"USDC": tv, "pct": 0.0},
+            "30d": {"USDC": tv, "pct": 0.0},
+            "all": {"USDC": tv, "pct": 0.0},
         }
     with open(PERF_FILE, "r") as f:
         history = json.load(f)
     if not history:
         pf = get_portfolio_state()
-        tv = pf["total_value_usdt"]
+        tv = pf["total_value_USDC"]
         return {
-            "1d": {"usdt": tv, "pct": 0.0},
-            "7d": {"usdt": tv, "pct": 0.0},
-            "30d": {"usdt": tv, "pct": 0.0},
-            "all": {"usdt": tv, "pct": 0.0},
+            "1d": {"USDC": tv, "pct": 0.0},
+            "7d": {"USDC": tv, "pct": 0.0},
+            "30d": {"USDC": tv, "pct": 0.0},
+            "all": {"USDC": tv, "pct": 0.0},
         }
     last_entry = history[-1]
-    current_val = last_entry["value_usdt"]
+    current_val = last_entry["value_USDC"]
     now_ts = last_entry["timestamp"]
 
     def find_val_x_days_ago(x_days):
@@ -220,27 +220,27 @@ def get_performance_history():
         candidates = [h for h in history if h["timestamp"] <= target_ts]
         if not candidates:
             return None
-        return candidates[-1]["value_usdt"]
+        return candidates[-1]["value_USDC"]
 
     def compute_perf(x_days):
         old_val = find_val_x_days_ago(x_days)
         if old_val is None or old_val <= 0:
-            return {"usdt": current_val, "pct": 0.0}
+            return {"USDC": current_val, "pct": 0.0}
         diff = current_val - old_val
         pct = (diff / old_val) * 100
-        return {"usdt": current_val, "pct": round(pct, 2)}
+        return {"USDC": current_val, "pct": round(pct, 2)}
 
     perf_1d = compute_perf(1)
     perf_7d = compute_perf(7)
     perf_30d = compute_perf(30)
-    first_val = history[0]["value_usdt"]
+    first_val = history[0]["value_USDC"]
     pct_all = (current_val - first_val) / first_val * 100 if first_val > 0 else 0.0
 
     return {
         "1d": perf_1d,
         "7d": perf_7d,
         "30d": perf_30d,
-        "all": {"usdt": current_val, "pct": round(pct_all, 2)}
+        "all": {"USDC": current_val, "pct": round(pct_all, 2)}
     }
 
 ########################
@@ -249,13 +249,13 @@ def get_performance_history():
 
 def emergency_out():
     """
-    Vend toutes les positions (sauf USDT).
+    Vend toutes les positions (sauf USDC).
     """
     bexec = TradeExecutor(BINANCE_KEY, BINANCE_SECRET)
     info = bexec.client.get_account()
     for b in info["balances"]:
         asset = b["asset"]
         qty = float(b["free"]) + float(b["locked"])
-        if qty > 0 and asset.upper() != "USDT":
+        if qty > 0 and asset.upper() != "USDC":
             bexec.sell_all(asset, qty)
     logging.info("[EMERGENCY] Tout vendu.")
