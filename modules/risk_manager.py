@@ -25,8 +25,8 @@ def intraday_check_real(state, bexec, config):
         free  = float(b["free"])
         locked= float(b["locked"])
         qty   = free + locked
-        # on ignore USDT= stable
-        if qty > 0 and asset.upper() != "USDT":
+        # on ignore USDC= stable
+        if qty > 0 and asset.upper() != "USDC":
             holdings[asset] = qty
 
     logging.info(f"[INTRADAY] holdings={holdings}")
