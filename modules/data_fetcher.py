@@ -197,8 +197,8 @@ def verify_token_identity(symbol: str, binance_client: BinanceClient, lunar_df: 
       True si les prix sont cohérents, False sinon.
     """
     try:
-        # Construction du ticker Binance en ajoutant "USDT" (ex: "BANANAUSDT")
-        binance_symbol = symbol.upper() + "USDT"
+        # Construction du ticker Binance en ajoutant "USDC" (ex: "BANANAUSDC")
+        binance_symbol = symbol.upper() + "USDC"
         ticker = binance_client.get_symbol_ticker(symbol=binance_symbol)
         binance_price = float(ticker.get("price", 0))
         if binance_price == 0:
