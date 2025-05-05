@@ -137,15 +137,15 @@ TEMPLATE_HTML = r"""
   <!-- Positions Tab -->
   <div class="tab-pane fade show active" id="positions" role="tabpanel" aria-labelledby="positions-tab">
     <h2>Positions Actuelles (Compte Live)</h2>
-    <p>Valeur Totale: {{ pf['total_value_usdt'] }} USDT</p>
+    <p>Valeur Totale: {{ pf['total_value_USDC'] }} USDC</p>
     <table class="table table-striped">
-      <thead><tr><th>Symbol</th><th>QTY</th><th>Value (USDT)</th></tr></thead>
+      <thead><tr><th>Symbol</th><th>QTY</th><th>Value (USDC)</th></tr></thead>
       <tbody>
       {% for pos in pf['positions'] %}
         <tr>
           <td>{{ pos.symbol }}</td>
           <td>{{ pos.qty }}</td>
-          <td>{{ pos.value_usdt }}</td>
+          <td>{{ pos.value_USDC }}</td>
         </tr>
       {% endfor %}
       </tbody>
@@ -168,12 +168,12 @@ TEMPLATE_HTML = r"""
   <div class="tab-pane fade" id="perf" role="tabpanel" aria-labelledby="perf-tab">
     <h2>Performance</h2>
     <table class="table table-bordered">
-      <thead><tr><th>Horizon</th><th>USDT</th><th>%</th></tr></thead>
+      <thead><tr><th>Horizon</th><th>USDC</th><th>%</th></tr></thead>
       <tbody>
       {% for horizon, vals in perf.items() %}
        <tr>
          <td>{{ horizon }}</td>
-         <td>{{ vals.usdt }}</td>
+         <td>{{ vals.USDC }}</td>
          <td>{{ vals.pct }}%</td>
        </tr>
       {% endfor %}
@@ -198,7 +198,7 @@ TEMPLATE_HTML = r"""
       <thead>
         <tr>
           <th>Symbol</th><th>Buy Prob</th><th>Sell Prob</th>
-          <th>Jours</th><th>PNL (USDT)</th><th>PNL (%)</th><th>Status</th>
+          <th>Jours</th><th>PNL (USDC)</th><th>PNL (%)</th><th>Status</th>
         </tr>
       </thead>
       <tbody>
@@ -208,7 +208,7 @@ TEMPLATE_HTML = r"""
           <td>{{ tr.buy_prob }}</td>
           <td>{{ tr.sell_prob }}</td>
           <td>{{ tr.days_held }}</td>
-          <td>{{ tr.pnl_usdt }}</td>
+          <td>{{ tr.pnl_USDC }}</td>
           <td>{{ tr.pnl_pct }}%</td>
           <td>{{ tr.status }}</td>
         </tr>
