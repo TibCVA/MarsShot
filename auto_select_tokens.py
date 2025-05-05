@@ -121,7 +121,7 @@ def update_config_tokens_daily(new_tokens):
         return
     with open(CONFIG_YML, "r") as f:
         cfg = yaml.safe_load(f)
-    cfg["tokens_daily"] = new_tokens
+    cfg["extended_tokens_daily"] = new_tokens
 
     with open(CONFIG_YML, "w") as f:
         yaml.dump(cfg, f, sort_keys=False)
