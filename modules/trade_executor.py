@@ -28,7 +28,7 @@ def record_trade(side, asset, qty, cost, avg_px):
     side  => "BUY" ou "SELL"
     asset => ex: "BTC"
     qty   => quantité achetée/vendue
-    cost  => somme en USDT payée ou reçue
+    cost  => somme en USDC payée ou reçue
     avg_px=> prix moyen d'exécution
     """
     trades = load_trade_history()
@@ -39,7 +39,7 @@ def record_trade(side, asset, qty, cost, avg_px):
         "side": side.upper(),
         "asset": asset.upper(),
         "qty": float(qty),
-        "cost_usdt": float(cost),
+        "cost_USDC": float(cost),
         "avg_px": float(avg_px)
     })
     save_trade_history(trades)
@@ -50,10 +50,10 @@ class TradeExecutor:
         logging.info("[TradeExecutor] Initialized with given API/Secret")
 
     def get_symbol_price(self, asset):
-        """Retourne le prix de asset/USDT."""
-        if asset.upper() == "USDT":
+        """Retourne le prix de asset/USDC."""
+        if asset.upper() == "USDC":
             return 1.0
-        pair = asset.upper() + "USDT"
+        pair = asset.upper() + "USDC"
         try:
             tick = self.client.get_symbol_ticker(symbol=pair)
             px = float(tick["price"])
@@ -65,13 +65,13 @@ class TradeExecutor:
 
     def sell_all(self, asset, qty):
         """
-        Vend la totalité du token 'asset' (qty) contre USDT.
-        Retourne la somme reçue en USDT.
+        Vend la totalité du token 'asset' (qty) contre USDC.
+        Retourne la somme reçue en USDC.
         """
         if qty <= 0:
             logging.warning(f"[SELL_ALL] qty<=0 => skip {asset}")
             return 0.0
-        pair = asset.upper() + "USDT"
+        pair = asset.upper() + "USDC"
 
         real_qty = self.adjust_quantity_lot_size(pair, qty)
         if real_qty <= 0:
@@ -108,17 +108,17 @@ class TradeExecutor:
         logging.info(f"[SELL_PARTIAL] {asset}, qty={qty}")
         return self.sell_all(asset, qty)
 
-    def buy(self, asset, usdt_amount):
+    def buy(self, asset, USDC_amount):
         """
-        Achète 'asset' pour un montant 'usdt_amount' USDT au prix du marché.
+        Achète 'asset' pour un montant 'USDC_amount' USDC au prix du marché.
         Retourne (fill_qty, avg_px, fill_sum).
         """
-        pair = asset.upper() + "USDT"
+        pair = asset.upper() + "USDC"
         try:
             px_info = self.client.get_symbol_ticker(symbol=pair)
             px = float(px_info["price"])
 
-            raw_qty = usdt_amount / px
+            raw_qty = USDC_amount / px
             adj_qty = self.adjust_quantity_lot_size(pair, raw_qty)
             if adj_qty <= 0:
                 logging.warning(f"[BUY] {asset}, qty={adj_qty} => trop faible => skip")
