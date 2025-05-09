@@ -56,14 +56,14 @@ def daily_update_live(state, bexec):
     with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
-    tokens_daily = config.get("tokens_daily", [])
-    strat = config.get("strategy", {})
+    tokens_daily   = config.get("tokens_daily", [])
+    strat          = config.get("strategy", {})
     sell_threshold = strat.get("sell_threshold", 0.3)
     big_gain_pct   = strat.get("big_gain_exception_pct", 10.0)
     buy_threshold  = strat.get("buy_threshold", 0.5)
 
-    MIN_VALUE_TO_SELL = 5.0   
-    MAX_VALUE_TO_SKIP_BUY = 10.0  
+    MIN_VALUE_TO_SELL    = 5.0   
+    MAX_VALUE_TO_SKIP_BUY = 20.0   # <-- ajusté à 20 USDC
 
     # Fusion tokens_daily et positions_meta pour créer extended_tokens_daily
     system_positions = list(state.get("positions_meta", {}).keys())
@@ -74,13 +74,19 @@ def daily_update_live(state, bexec):
         yaml.safe_dump(config, fw, sort_keys=False)
 
     try:
-        subprocess.run(["python", "modules/data_fetcher.py", "--config", "config_temp.yaml"], check=False)
+        subprocess.run(
+            ["python", "modules/data_fetcher.py", "--config", "config_temp.yaml"],
+            check=False
+        )
     except Exception as e:
         logging.error(f"[DAILY UPDATE] data_fetcher => {e}")
         return
 
-    if (not os.path.exists("daily_inference_data.csv") or os.path.getsize("daily_inference_data.csv") < 100):
-        logging.warning("[DAILY UPDATE] daily_inference_data.csv introuvable ou vide => skip ml_decision.")
+    if (not os.path.exists("daily_inference_data.csv")
+        or os.path.getsize("daily_inference_data.csv") < 100):
+        logging.warning(
+            "[DAILY UPDATE] daily_inference_data.csv introuvable ou vide => skip ml_decision."
+        )
         return
 
     try:
@@ -98,12 +104,12 @@ def daily_update_live(state, bexec):
         logging.error(f"[DAILY UPDATE] get_account => {e}")
         return
 
-    balances = account_info.get("balances", [])
-    holdings = {}
+    balances     = account_info.get("balances", [])
+    holdings     = {}
     USDC_balance = 0.0
     for b in balances:
         asset = b["asset"]
-        qty = float(b["free"]) + float(b["locked"])
+        qty   = float(b["free"]) + float(b["locked"])
         if asset.upper() == "USDC":
             USDC_balance = qty
         elif qty > 0:
@@ -127,15 +133,19 @@ def daily_update_live(state, bexec):
             meta = state.get("positions_meta", {}).get(asset, {})
             entry_px = meta.get("entry_px", 0.0)
             if entry_px > 0:
-                ratio = current_px / entry_px
+                ratio    = current_px / entry_px
                 did_skip = meta.get("did_skip_sell_once", False)
                 if ratio >= big_gain_pct and not did_skip:
                     meta["did_skip_sell_once"] = True
                     state.setdefault("positions_meta", {})[asset] = meta
-                    logging.info(f"[DAILY SELL SKIP big_gain] => {asset}, ratio={ratio:.2f}")
+                    logging.info(
+                        f"[DAILY SELL SKIP big_gain] => {asset}, ratio={ratio:.2f}"
+                    )
                     continue
             sold_val = bexec.sell_all(asset, real_qty)
-            logging.info(f"[DAILY SELL LIVE] {asset}, sold_val={sold_val:.2f}, prob={prob:.2f}")
+            logging.info(
+                f"[DAILY SELL LIVE] {asset}, sold_val={sold_val:.2f}, prob={prob:.2f}"
+            )
             if asset in state.get("positions_meta", {}):
                 del state["positions_meta"][asset]
             save_state(state)
@@ -150,33 +160,41 @@ def daily_update_live(state, bexec):
     except Exception as e:
         logging.error(f"[DAILY UPDATE] get_account after sleep => {e}")
         return
-    balances2 = account_info.get("balances", [])
-    new_holdings = {}
-    new_USDC_balance = 0.0
+
+    balances2         = account_info.get("balances", [])
+    new_holdings      = {}
+    new_USDC_balance  = 0.0
     for b in balances2:
         asset = b["asset"]
-        qty = float(b["free"]) + float(b["locked"])
+        qty   = float(b["free"]) + float(b["locked"])
         if asset.upper() == "USDC":
             new_USDC_balance = qty
         elif qty > 0:
             new_holdings[asset] = qty
-    logging.info(f"[DAILY UPDATE] After wait => holdings={new_holdings}, USDC={new_USDC_balance:.2f}")
 
-    # Phase BUY : sélectionner les 3 meilleurs tokens (BUY si prob >= buy_threshold)
+    logging.info(
+        f"[DAILY UPDATE] After wait => holdings={new_holdings}, USDC={new_USDC_balance:.2f}"
+    )
+
+    # Phase BUY : on inclut extended_tokens_daily pour racheter petites positions (<20 USDC)
+    buy_list = config.get("extended_tokens_daily", tokens_daily)
     buy_candidates = []
-    for sym in tokens_daily:
+    for sym in buy_list:
         p = prob_map.get(sym, None)
         logging.info(f"[DAILY BUY CHECK] {sym}, prob={p}")
         if p is None or p < buy_threshold:
             continue
         cur_qty = new_holdings.get(sym, 0.0)
         if cur_qty > 0:
-            px_tmp = bexec.get_symbol_price(sym)
+            px_tmp  = bexec.get_symbol_price(sym)
             val_tmp = px_tmp * cur_qty
             if val_tmp > MAX_VALUE_TO_SKIP_BUY:
-                logging.info(f"[DAILY BUY] skip => {sym}, already {val_tmp:.2f} USDC > {MAX_VALUE_TO_SKIP_BUY}")
+                logging.info(
+                    f"[DAILY BUY] skip => {sym}, already {val_tmp:.2f} USDC > {MAX_VALUE_TO_SKIP_BUY}"
+                )
                 continue
         buy_candidates.append((sym, p))
+
     buy_candidates.sort(key=lambda x: x[1], reverse=True)
     top3 = buy_candidates[:3]
     logging.info(f"[DAILY BUY SELECT] => {top3}")
@@ -190,7 +208,9 @@ def daily_update_live(state, bexec):
                 break
             alloc = leftover / tokens_left
             qty_b, px_b, sum_b = bexec.buy(sym, alloc)
-            logging.info(f"[DAILY BUY EXEC] => {sym}, qty={qty_b:.4f}, cost={sum_b:.2f}, px={px_b:.4f}")
+            logging.info(
+                f"[DAILY BUY EXEC] => {sym}, qty={qty_b:.4f}, cost={sum_b:.2f}, px={px_b:.4f}"
+            )
             if qty_b > 0:
                 state.setdefault("positions_meta", {})[sym] = {
                     "entry_px": px_b,
@@ -200,6 +220,7 @@ def daily_update_live(state, bexec):
                 }
                 leftover -= sum_b
                 save_state(state)
+
     logging.info("[DAILY UPDATE] Done daily_update_live")
 
 def main():
@@ -230,15 +251,16 @@ def main():
 
     # Daily update live fixée à 02h10 UTC
     DAILY_UPDATE_HOUR = 2
-    DAILY_UPDATE_MIN = 10
+    DAILY_UPDATE_MIN  = 10
 
     while True:
         try:
             now = datetime.datetime.now(tz_paris)
-            current_ts = time.time()
 
             # Daily update live à 02h10 UTC
-            if now.hour == DAILY_UPDATE_HOUR and now.minute == DAILY_UPDATE_MIN and not state.get("did_daily_update_today", False):
+            if (now.hour == DAILY_UPDATE_HOUR and
+                now.minute == DAILY_UPDATE_MIN and
+                not state.get("did_daily_update_today", False)):
                 logging.info("[MAIN] => daily_update_live (scheduled update).")
                 run_auto_select_once_per_day(state)
                 daily_update_live(state, bexec)
@@ -246,9 +268,9 @@ def main():
                 save_state(state)
 
             # Réinitialisation du flag de daily update à 00h00 UTC
-            if now.hour == 2 and now.minute < 5:
+            if now.hour == DAILY_UPDATE_HOUR and now.minute < 5:
                 if state.get("did_daily_update_today", False):
-                    logging.info("[MAIN] Reset daily update flag for new day.")
+                    logging.info(  "[MAIN] Reset daily update flag for new day.")
                     state["did_daily_update_today"] = False
                     save_state(state)
 
