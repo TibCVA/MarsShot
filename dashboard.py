@@ -3,6 +3,8 @@
 
 """
 Mini-dashboard Flask pour MarsShot.
+Affiche plusieurs onglets, concatène les logs.
++ Bouton "Forcer daily update" qui exécute le cycle quotidien complet.
 """
 
 import os
@@ -10,7 +12,7 @@ import datetime
 import logging
 import yaml 
 from flask import Flask, request, jsonify, render_template_string
-import sys
+import sys 
 
 # --- Configuration des Chemins (au niveau du module) ---
 DASHBOARD_PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -18,53 +20,67 @@ CONFIG_FILE_PATH_DASH = os.path.join(DASHBOARD_PROJECT_ROOT, "config.yaml")
 MODEL_DEUXPOINTCINQ_PATH = os.path.join(DASHBOARD_PROJECT_ROOT, "model_deuxpointcinq.pkl")
 MODEL_PKL_PATH = os.path.join(DASHBOARD_PROJECT_ROOT, "model.pkl")
 
-# --- Configuration du Logger pour le Dashboard ---
-# Configurer ce logger très tôt pour attraper les erreurs d'import.
+# Logger spécifique pour le dashboard
 dashboard_logger = logging.getLogger("dashboard_app")
 if not dashboard_logger.hasHandlers():
-    _ch = logging.StreamHandler(sys.stderr) # Écrire sur stderr pour visibilité immédiate
-    _cf = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s:%(lineno)d - %(message)s")
-    _ch.setFormatter(_cf)
-    dashboard_logger.addHandler(_ch)
-    dashboard_logger.setLevel(logging.DEBUG) # DEBUG pour voir tous les messages pendant le débogage
+    console_handler_dash = logging.StreamHandler(sys.stderr)
+    formatter_dash = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s - %(message)s")
+    console_handler_dash.setFormatter(formatter_dash)
+    dashboard_logger.addHandler(console_handler_dash)
+    dashboard_logger.setLevel(logging.INFO) # INFO est généralement suffisant pour le dashboard
     dashboard_logger.propagate = False
 dashboard_logger.info("Logger du dashboard initialisé.")
 
 # --- Imports des Dépendances avec Gestion d'Erreur ---
-dashboard_data_available = False
+# Ces imports sont critiques. S'ils échouent, le dashboard aura des problèmes.
 try:
     from dashboard_data import (
         get_portfolio_state, get_performance_history,
         get_trades_history, emergency_out
     )
-    dashboard_data_available = True
     dashboard_logger.info("dashboard_data importé avec succès.")
 except ImportError as e:
     dashboard_logger.error(f"Échec de l'import de dashboard_data: {e}. Les fonctionnalités de données seront limitées.", exc_info=True)
     # Définir des factices pour que le reste ne plante pas
-    def get_portfolio_state(): return {"positions": [], "total_value_USDC": "Erreur: dashboard_data non disponible"}
-    def get_performance_history(): return {"error": "dashboard_data non disponible"}
-    def get_trades_history(): return [{"symbol": "Erreur: dashboard_data non disponible"}]
+    def get_portfolio_state(): return {"positions": [], "total_value_USDC": "Erreur: dashboard_data"}
+    def get_performance_history(): return {"error": "dashboard_data"}
+    def get_trades_history(): return [{"symbol": "Erreur: dashboard_data"}]
     def emergency_out(): dashboard_logger.error("Fonction emergency_out non disponible (dashboard_data manquant).")
 
-main_module_components = {}
+main_module_imported_successfully = False
+main_daily_update_live_func = None
+load_state_func = None
+# configure_main_logging_func n'était pas dans la version qui affichait l'URL, 
+# car la configuration du logging de main.py était gérée par main.py lui-même.
+# Nous allons revenir à cette approche pour simplifier.
+TradeExecutor_class = None
+
 try:
-    from main import daily_update_live, load_state as main_load_state, configure_main_logging as main_configure_logging
+    from main import daily_update_live # Importer directement
+    from main import load_state as main_load_state # Importer directement
+    # PAS d'import de configure_main_logging ici pour revenir à la version plus simple
     from modules.trade_executor import TradeExecutor as ModTradeExecutor
     
-    main_module_components['daily_update_live'] = daily_update_live
-    main_module_components['load_state'] = main_load_state
-    main_module_components['configure_main_logging'] = main_configure_logging
-    main_module_components['TradeExecutor'] = ModTradeExecutor
-    dashboard_logger.info("Composants de main.py et TradeExecutor importés avec succès.")
+    main_daily_update_live_func = daily_update_live
+    load_state_func = main_load_state
+    TradeExecutor_class = ModTradeExecutor
+    main_module_imported_successfully = True
+    dashboard_logger.info("Composants de main.py et TradeExecutor importés (version simplifiée pour démarrage).")
 except ImportError as e:
     dashboard_logger.error(f"Échec de l'import des composants de main.py/TradeExecutor: {e}. 'Forcer Daily Update' sera désactivé.", exc_info=True)
-    # Les fonctions seront vérifiées avant appel dans la route
+    # Les factices sont définis ci-dessous
+    def main_daily_update_live_func_placeholder(state, bexec):
+        raise RuntimeError("Dépendances de main.py manquantes pour 'Forcer Daily Update'.")
+    def load_state_func_placeholder(): return {}
+    class TradeExecutor_class_placeholder: __init__ = lambda self, api_key, api_secret: None
+    if main_daily_update_live_func is None: main_daily_update_live_func = main_daily_update_live_func_placeholder
+    if load_state_func is None: load_state_func = load_state_func_placeholder
+    if TradeExecutor_class is None: TradeExecutor_class = TradeExecutor_class_placeholder
 
-# --- Constantes et Fonctions Utilitaires du Dashboard ---
+
 ALL_LOG_FILES_RELATIVE = ["bot.log", "data_fetcher.log", "ml_decision.log"]
 NUM_LOG_LINES = 400
-SECRET_PWD = os.environ.get("MARSSHOT_DASHBOARD_PWD", "SECRET123")
+SECRET_PWD = os.environ.get("MARSSHOT_DASHBOARD_PWD", "SECRET123") 
 
 def tail_all_logs(num_lines=NUM_LOG_LINES):
     combined_lines = []
@@ -79,11 +95,10 @@ def tail_all_logs(num_lines=NUM_LOG_LINES):
                 combined_lines.append(msg); dashboard_logger.warning(msg.strip())
         else:
             msg = f"\n[{os.path.basename(actual_log_path)}] n'existe pas (chemin testé: {actual_log_path}).\n"
-            combined_lines.append(msg); dashboard_logger.debug(msg.strip()) # DEBUG car c'est normal au début
+            combined_lines.append(msg); dashboard_logger.debug(msg.strip())
     return "".join(combined_lines)
 
 def get_model_version_date():
-    # ... (inchangé, mais utilise les constantes de chemin définies en haut) ...
     if os.path.exists(MODEL_DEUXPOINTCINQ_PATH): fname_to_check = MODEL_DEUXPOINTCINQ_PATH
     elif os.path.exists(MODEL_PKL_PATH): fname_to_check = MODEL_PKL_PATH
     else: return "model_deuxpointcinq.pkl ou model.pkl introuvable."
@@ -92,9 +107,7 @@ def get_model_version_date():
         return f"{os.path.basename(fname_to_check)} - {dt.strftime('%Y-%m-%d %H:%M:%S')}"
     except Exception as e: return f"Erreur lecture date {os.path.basename(fname_to_check)}: {e}"
 
-
 def get_tokens_live():
-    # ... (inchangé, mais utilise CONFIG_FILE_PATH_DASH et dashboard_logger) ...
     if os.path.exists(CONFIG_FILE_PATH_DASH):
         try:
             with open(CONFIG_FILE_PATH_DASH, "r", encoding="utf-8") as f: conf = yaml.safe_load(f)
@@ -106,16 +119,15 @@ def get_tokens_live():
             dashboard_logger.error(f"Erreur lecture {CONFIG_FILE_PATH_DASH} dans get_tokens_live: {e}"); return ["Erreur lecture config"]
     else: return [f"{os.path.basename(CONFIG_FILE_PATH_DASH)} introuvable"]
 
-
 # --- Initialisation de l'Application Flask ---
 try:
     app = Flask(__name__)
     dashboard_logger.info("Application Flask initialisée.")
 except Exception as e:
     dashboard_logger.critical(f"ÉCHEC CRITIQUE: Impossible d'initialiser Flask: {e}", exc_info=True)
-    sys.exit("Flask init failed") # Quitter si Flask ne peut pas être initialisé
+    sys.exit("Flask init failed")
 
-# --- Template HTML ---
+# --- Template HTML (doit être le HTML complet) ---
 TEMPLATE_HTML = r"""
 <!DOCTYPE html>
 <html lang="en">
@@ -310,7 +322,7 @@ TEMPLATE_HTML = r"""
 function triggerEmergency(){
   if(confirm("Êtes-vous absolument sûr de vouloir vendre toutes les positions non-stables ? Cette action est irréversible.")) {
     document.getElementById("emergencyResult").innerText = "Déclenchement de la sortie d'urgence...";
-    fetch("{{ url_for('emergency_api_route', pwd=secret_pwd) }}", {method:'POST'})
+    fetch("{{ url_for('emergency_api_route', pwd=secret_pwd) }}", {method:'POST'}) // Utiliser le nom de route corrigé
     .then(response => response.json())
     .then(data => {
       document.getElementById("emergencyResult").innerText = data.message;
@@ -325,7 +337,7 @@ function triggerEmergency(){
 
 // Logs
 function refreshLogs(){
-  fetch("{{ url_for('get_logs_route', pwd=secret_pwd) }}")
+  fetch("{{ url_for('get_logs_route', pwd=secret_pwd) }}") // Utiliser le nom de route corrigé
    .then(response => response.text())
    .then(text => {
      document.getElementById("logsContent").innerText = text;
@@ -344,7 +356,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function forceDailyUpdate(){
   if(confirm("Forcer la mise à jour quotidienne maintenant ? Cela peut prendre plusieurs minutes.")) {
     document.getElementById("forceDailyResult").innerText = "Mise à jour quotidienne en cours...";
-    fetch("{{ url_for('force_daily_update_route', pwd=secret_pwd) }}", {method:'POST'})
+    fetch("{{ url_for('force_daily_update_route', pwd=secret_pwd) }}", {method:'POST'}) // Utiliser le nom de route corrigé
     .then(response => {
         if (!response.ok) {
             return response.json().then(errData => { 
@@ -371,6 +383,7 @@ function forceDailyUpdate(){
 </body>
 </html>
 """ # FIN DE TEMPLATE_HTML
+
 
 # --- Routes Flask ---
 @app.route(f"/dashboard/<pwd>", methods=["GET"])
@@ -403,55 +416,60 @@ def force_daily_update_route(pwd):
 
     dashboard_logger.info("Déclenchement manuel du Daily Update via le dashboard.")
 
-    if not main_module_components.get('daily_update_live') or \
-       not main_module_components.get('load_state') or \
-       not main_module_components.get('configure_main_logging') or \
-       not main_module_components.get('TradeExecutor'):
+    # Vérifier si les composants de main ont été importés
+    if not main_module_imported_successfully or \
+       main_daily_update_live_func is None or \
+       load_state_func is None or \
+       TradeExecutor_class is None:
         msg = "Composants de main.py non importés correctement. 'Forcer Daily Update' est désactivé."
         dashboard_logger.error(msg)
         return jsonify({"message": msg}), 500
 
     try:
         if not os.path.exists(CONFIG_FILE_PATH_DASH):
-            msg = f"Erreur critique: {CONFIG_FILE_PATH_DASH} introuvable."
+            msg = f"Erreur critique: {CONFIG_FILE_PATH_DASH} (config pour dashboard) introuvable."
             dashboard_logger.error(msg); return jsonify({"message": msg}), 500
         
         with open(CONFIG_FILE_PATH_DASH, "r", encoding="utf-8") as f:
             config_main_for_call = yaml.safe_load(f)
         
-        # (Ré)configurer le logging du module 'main_bot_logic'
-        main_log_settings = config_main_for_call.get("logging", {})
-        main_module_components['configure_main_logging'](main_log_settings) 
-        dashboard_logger.info("Logging pour 'main_bot_logic' (ré)configuré pour cet appel.")
+        # (Ré)configurer le logging du module 'main_bot_logic' SI la fonction a été importée
+        # main.py configure son propre logger nommé "main_bot_logic"
+        # dashboard.py a son propre logger "dashboard_app"
+        # Il n'est pas nécessaire que dashboard.py reconfigure le logger de main.py ici,
+        # main.py le fera lors de son initialisation ou au début de ses fonctions si besoin.
+        # L'important est que main.py logue dans le fichier attendu.
+        # Laissons main.py gérer son propre logging.
+        dashboard_logger.info("Préparation de l'appel à main_daily_update_live_func.")
 
-        state = main_module_components['load_state']()
+        state = load_state_func() # Utilise la fonction importée
         
         binance_api_config = config_main_for_call.get("binance_api", {})
         api_key = binance_api_config.get("api_key")
         api_secret = binance_api_config.get("api_secret")
 
         if not api_key or not api_secret:
-            msg = "Erreur config: Clés API Binance manquantes."; dashboard_logger.error(msg)
+            msg = "Erreur de configuration: Clés API Binance manquantes."; dashboard_logger.error(msg)
             return jsonify({"message": msg}), 500
 
-        bexec = main_module_components['TradeExecutor'](api_key=api_key, api_secret=api_secret)
+        bexec = TradeExecutor_class(api_key=api_key, api_secret=api_secret) # Utilise la classe importée
         dashboard_logger.info("TradeExecutor initialisé pour le forçage du daily update.")
 
     except Exception as e_init:
-        dashboard_logger.error(f"Erreur initialisation pour force_daily_update: {e_init}", exc_info=True)
-        return jsonify({"message": f"Erreur d'initialisation: {e_init}"}), 500
+        dashboard_logger.error(f"Erreur générale initialisation pour force_daily_update: {e_init}", exc_info=True)
+        return jsonify({"message": f"Erreur d'initialisation: {str(e_init)}"}), 500 # str(e_init) pour un message plus simple
 
     try:
         dashboard_logger.info("Appel de main_daily_update_live_func...")
-        main_module_components['daily_update_live'](state, bexec) 
+        main_daily_update_live_func(state, bexec) # Appelle la fonction importée
         dashboard_logger.info("main_daily_update_live_func terminé (appelé depuis dashboard).")
         return jsonify({"message": "Mise à jour quotidienne (forcée) déclenchée et semble terminée. Vérifiez les logs."})
     except RuntimeError as e_rt: 
         dashboard_logger.error(f"Erreur d'exécution (RuntimeError) dans main_daily_update_live_func: {e_rt}", exc_info=True)
-        return jsonify({"message": f"Erreur d'exécution: {e_rt}"}), 500
+        return jsonify({"message": f"Erreur d'exécution: {str(e_rt)}"}), 500
     except Exception as e_daily:
         dashboard_logger.error(f"Erreur lors de l'exécution de main_daily_update_live_func: {e_daily}", exc_info=True)
-        return jsonify({"message": f"Erreur lors de la mise à jour quotidienne forcée: {e_daily}"}), 500
+        return jsonify({"message": f"Erreur lors de la mise à jour quotidienne forcée: {str(e_daily)}"}), 500
 
 @app.route(f"/logs/<pwd>", methods=["GET"])
 def get_logs_route(pwd):
@@ -464,14 +482,17 @@ def run_dashboard():
     werkzeug_logger.setLevel(logging.ERROR) 
     dashboard_logger.info(f"Démarrage du serveur Flask du Dashboard sur 0.0.0.0:5000 (PID: {os.getpid()})")
     try:
-        app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+        # Utiliser un port différent pour le test si 5000 est suspecté d'être bloqué
+        # app.run(host="0.0.0.0", port=5001, debug=False, use_reloader=False)
+        app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False) 
     except Exception as e_flask_run:
         dashboard_logger.critical(f"ÉCHEC CRITIQUE: Le serveur Flask n'a pas pu démarrer: {e_flask_run}", exc_info=True)
+        # Tenter un print au cas où le logging ne fonctionnerait pas à ce stade
+        print(f"ERREUR FLASK RUN: {e_flask_run}", file=sys.stderr)
         sys.exit("Flask run failed")
 
-
 if __name__ == "__main__":
-    if not dashboard_logger.hasHandlers(): # Fallback si le logger n'a pas été configuré plus haut
+    if not dashboard_logger.hasHandlers():
         logging.basicConfig(level=logging.INFO, 
                             format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
                             handlers=[logging.StreamHandler(sys.stderr)])
@@ -480,4 +501,5 @@ if __name__ == "__main__":
         run_dashboard()
     except Exception as e_main_dash:
         dashboard_logger.critical(f"Erreur non gérée au lancement du dashboard: {e_main_dash}", exc_info=True)
+        print(f"ERREUR MAIN DASHBOARD: {e_main_dash}", file=sys.stderr)
         sys.exit("Dashboard main execution failed")
