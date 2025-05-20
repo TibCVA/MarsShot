@@ -7,8 +7,7 @@ import datetime
 import yaml
 import os
 import pytz
-# subprocess n'est plus nécessaire pour auto_select_tokens si on l'appelle directement
-# import subprocess 
+import subprocess # Toujours nécessaire pour data_fetcher et ml_decision
 import json 
 import sys
 import pandas as pd
@@ -18,33 +17,38 @@ from modules.positions_store import load_state, save_state
 from modules.risk_manager import intraday_check_real
 
 # --- Import de la fonction depuis auto_select_tokens.py ---
+auto_select_module_imported = False
+select_tokens_and_update_config_auto_func = None
 try:
-    # auto_select_tokens.py est à la racine, comme main.py
-    from auto_select_tokens import select_and_write_tokens as select_tokens_and_update_config_auto
-    from auto_select_tokens import CONFIG_FILE_PATH as AUTO_SELECT_CONFIG_PATH # Récupérer le chemin de config utilisé par auto_select
+    from auto_select_tokens import select_and_write_tokens, CONFIG_FILE_PATH as AUTO_SELECT_CONFIG_PATH_FROM_MODULE
+    select_tokens_and_update_config_auto_func = select_and_write_tokens
+    auto_select_module_imported = True
 except ImportError as e:
-    logging.getLogger(__name__).critical(f"Impossible d'importer depuis auto_select_tokens.py: {e}. La sélection automatique sera désactivée.", exc_info=True)
-    # Définir une fonction factice pour éviter les crashs
-    def select_tokens_and_update_config_auto(client, config_path, num_tokens):
-        logging.getLogger(__name__).error("Fonction factice select_tokens_and_update_config_auto appelée.")
-        return [] # Retourne une liste vide
-    AUTO_SELECT_CONFIG_PATH = "config.yaml" # Fallback
+    # Le logger n'est pas encore configuré, utiliser print pour cette erreur critique initiale
+    print(f"ERREUR CRITIQUE main.py: Impossible d'importer depuis auto_select_tokens.py: {e}. La sélection automatique sera désactivée.", file=sys.stderr)
+    # Définir une fonction factice pour éviter les crashs ultérieurs
+    def select_tokens_and_update_config_auto_placeholder(binance_client_instance, config_path, num_top_tokens):
+        if logging.getLogger("main_bot_logic").hasHandlers(): # Vérifier si le logger est dispo
+            logging.getLogger("main_bot_logic").error("Fonction factice select_tokens_and_update_config_auto appelée car import a échoué.")
+        return [] 
+    select_tokens_and_update_config_auto_func = select_tokens_and_update_config_auto_placeholder
+    AUTO_SELECT_CONFIG_PATH_FROM_MODULE = "config.yaml" # Fallback
 
 
 # --- Configuration des Chemins (au niveau du module) ---
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE_PATH = os.path.join(PROJECT_ROOT, "config.yaml") # Fichier principal de config
+CONFIG_FILE_PATH = os.path.join(PROJECT_ROOT, "config.yaml") 
 CONFIG_TEMP_FILE_PATH = os.path.join(PROJECT_ROOT, "config_temp.yaml")
+# STATE_FILE_PATH est géré par positions_store.py
 DAILY_PROBABILITIES_CSV_PATH = os.path.join(PROJECT_ROOT, "daily_probabilities.csv")
 DAILY_INFERENCE_CSV_PATH = os.path.join(PROJECT_ROOT, "daily_inference_data.csv")
-# AUTO_SELECT_SCRIPT_PATH n'est plus nécessaire si on appelle la fonction directement
+# AUTO_SELECT_SCRIPT_PATH n'est plus utilisé pour subprocess
 DATA_FETCHER_SCRIPT_PATH = os.path.join(PROJECT_ROOT, "modules", "data_fetcher.py")
 ML_DECISION_SCRIPT_PATH = os.path.join(PROJECT_ROOT, "modules", "ml_decision.py")
 
 logger = logging.getLogger("main_bot_logic")
 
 def configure_main_logging(config_logging_settings=None):
-    # ... (fonction inchangée par rapport à la version précédente) ...
     global logger
     if config_logging_settings is None: config_logging_settings = {}
     log_file_name = config_logging_settings.get("file", "bot.log")
@@ -55,62 +59,74 @@ def configure_main_logging(config_logging_settings=None):
     if log_dir and not os.path.exists(log_dir):
         try: os.makedirs(log_dir, exist_ok=True)
         except OSError as e: print(f"Erreur création répertoire log {log_dir}: {e}"); log_file_path = os.path.basename(log_file_name)
-    if logger.hasHandlers(): logger.handlers.clear()
+    
+    # Nettoyer les handlers existants pour éviter la duplication si la fonction est appelée plusieurs fois
+    # (par exemple, par le dashboard)
+    for handler in logger.handlers[:]: logger.removeHandler(handler)
+    # Idem pour le logger root si on le configure aussi, mais attention aux interférences
+    # for handler in logging.getLogger().handlers[:]: logging.getLogger().removeHandler(handler)
+
+
     formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s.%(funcName)s:%(lineno)d - %(message)s")
     file_handler = logging.FileHandler(log_file_path, mode='a', encoding='utf-8')
     file_handler.setFormatter(formatter); logger.addHandler(file_handler)
+    
+    # Optionnel: Handler console pour le bot principal
+    # console_h = logging.StreamHandler(sys.stdout)
+    # console_h.setFormatter(formatter)
+    # logger.addHandler(console_h)
+    
     logger.setLevel(log_level); logger.propagate = False
     logger.info(f"Logging pour 'main_bot_logic' configuré. Fichier: {log_file_path}, Niveau: {log_level_str}")
     return log_file_path
 
 def load_probabilities_csv(csv_path=DAILY_PROBABILITIES_CSV_PATH):
-    # ... (fonction inchangée, utilise `logger`) ...
-    if not os.path.exists(csv_path): logger.warning(f"Fichier probabilités {csv_path} introuvable."); return {}
+    if not os.path.exists(csv_path): logger.warning(f"Fichier prob {csv_path} introuvable."); return {}
     try:
         df = pd.read_csv(csv_path)
-        if df.empty: logger.warning(f"Fichier probabilités {csv_path} vide."); return {}
+        if df.empty: logger.warning(f"Fichier prob {csv_path} vide."); return {}
         prob_map = {str(r["symbol"]).strip(): float(r["prob"]) for _, r in df.iterrows()}
         logger.info(f"{len(prob_map)} probabilités chargées depuis {csv_path}"); return prob_map
-    except pd.errors.EmptyDataError: logger.warning(f"Fichier probabilités {csv_path} vide/mal formaté."); return {}
+    except pd.errors.EmptyDataError: logger.warning(f"Fichier prob {csv_path} vide/mal formaté."); return {}
     except Exception as e: logger.error(f"Erreur lecture {csv_path}: {e}", exc_info=True); return {}
 
-# MODIFICATION: run_auto_select_once_per_day appelle maintenant la fonction importée
-def run_auto_select_once_per_day(bexec_client: Client, config_path_to_update: str, num_top_n: int):
+def run_auto_select_and_get_tokens(binance_client_instance: Client, config_path_main: str, num_top_n: int):
     """
-    Appelle la fonction de sélection de tokens de auto_select_tokens_module.
-    Retourne la liste des tokens sélectionnés, ou None en cas d'échec.
+    Appelle la fonction de sélection de tokens et retourne la liste.
+    auto_select_tokens.py est aussi censé mettre à jour config.yaml.
     """
-    logger.info(f"Appel de la fonction de sélection de tokens depuis auto_select_tokens module...")
-    if bexec_client is None:
-        logger.error("Client Binance (bexec.client) non fourni à run_auto_select_once_per_day.")
-        return None
+    logger.info(f"Appel de la fonction select_tokens_and_update_config_auto_func (de auto_select_tokens.py)...")
+    if not auto_select_module_imported or select_tokens_and_update_config_auto_func is None:
+        logger.error("Le module/fonction de sélection automatique de tokens n'a pas été importé correctement.")
+        return None # Échec clair
+        
+    selected_tokens = None
     try:
-        # Appeler la fonction importée en passant le client Binance
-        # et le chemin vers config.yaml que auto_select_tokens doit mettre à jour.
-        # Le nombre de tokens à sélectionner (top_n) vient de la config principale.
-        selected_tokens = select_tokens_and_update_config_auto(
-            binance_client_instance=bexec_client,
-            config_path=config_path_to_update, # C'est CONFIG_FILE_PATH de main.py
+        # La fonction importée select_and_write_tokens s'occupe de la logique et de la mise à jour de config.yaml
+        # Elle prend le client Binance, le chemin vers config.yaml, et le nombre de tokens.
+        # Utiliser AUTO_SELECT_CONFIG_PATH_FROM_MODULE pour être sûr que c'est le même config.yaml
+        # que celui que auto_select_tokens.py utiliserait s'il était lancé seul.
+        selected_tokens = select_tokens_and_update_config_auto_func(
+            binance_client_instance=binance_client_instance,
+            config_path=AUTO_SELECT_CONFIG_PATH_FROM_MODULE, 
             num_top_tokens=num_top_n
         )
-        if selected_tokens is not None: # Peut être une liste vide si aucun token sélectionné
+        
+        if selected_tokens is not None: # Peut être une liste vide
             logger.info(f"{len(selected_tokens)} tokens retournés par la fonction de sélection automatique.")
-        else: # La fonction a retourné None, indiquant un échec plus grave
-            logger.error("La fonction de sélection automatique a retourné None (échec).")
-        return selected_tokens
-    except RuntimeError as e_rt: # Si la fonction factice est appelée
-        logger.error(f"Erreur d'exécution lors de l'appel à la fonction de sélection: {e_rt}")
-        return None
+        else: # La fonction a explicitement retourné None, indiquant un échec
+            logger.error("La fonction de sélection automatique a retourné None (échec interne probable).")
+        return selected_tokens # Retourne la liste (peut être vide) ou None
+        
     except Exception as e:
         logger.error(f"Exception inattendue lors de l'appel à la fonction de sélection de tokens: {e}", exc_info=True)
-        return None
+        return None # Échec majeur
 
 
 def daily_update_live(state, bexec):
     logger.info("Début de daily_update_live.")
 
     # Lire la config une première fois pour obtenir top_n pour auto_select
-    # et pour les paramètres de stratégie, etc.
     if not os.path.exists(CONFIG_FILE_PATH):
         logger.error(f"{CONFIG_FILE_PATH} introuvable. Arrêt de daily_update_live.")
         return
@@ -118,35 +134,40 @@ def daily_update_live(state, bexec):
         with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
     except Exception as e:
-        logger.error(f"Erreur lors de la lecture initiale de {CONFIG_FILE_PATH}: {e}", exc_info=True)
-        return
+        logger.error(f"Erreur lors de la lecture initiale de {CONFIG_FILE_PATH}: {e}", exc_info=True); return
     
     top_n_for_auto_select = config.get("strategy", {}).get("auto_select_top_n", 60)
+    if not isinstance(top_n_for_auto_select, int) or top_n_for_auto_select <= 0:
+        logger.warning(f"Valeur 'auto_select_top_n' invalide ({top_n_for_auto_select}), défaut 60.")
+        top_n_for_auto_select = 60
 
-    logger.info("Appel de run_auto_select_once_per_day (appel de fonction directe)...")
-    # Passer bexec.client, le chemin de config.yaml à mettre à jour, et top_n
-    auto_selected_tokens = run_auto_select_once_per_day(bexec.client, CONFIG_FILE_PATH, top_n_for_auto_select)
+    logger.info("Appel de run_auto_select_and_get_tokens (appel de fonction directe)...")
+    auto_selected_tokens = run_auto_select_and_get_tokens(bexec.client, CONFIG_FILE_PATH, top_n_for_auto_select)
 
-    if auto_selected_tokens is None:
-        logger.error("Échec critique de la sélection automatique des tokens. Utilisation des tokens de config.yaml comme fallback si présents.")
-        auto_selected_tokens = config.get("extended_tokens_daily", []) # Fallback sur ce qui est dans config
-        if not isinstance(auto_selected_tokens, list): auto_selected_tokens = []
-    elif not auto_selected_tokens: # Liste vide retournée, mais pas d'erreur critique
-        logger.warning("Aucun token retourné par la sélection automatique. 'extended_tokens_daily' dans config.yaml devrait être vide.")
-        # Relire config pour être sûr de son état après l'appel (auto_select_tokens est censé l'avoir mis à jour)
-        try:
-            with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f: temp_cfg_check = yaml.safe_load(f)
-            auto_selected_tokens = temp_cfg_check.get("extended_tokens_daily", [])
-            if not isinstance(auto_selected_tokens, list): auto_selected_tokens = []
-            logger.info(f"Vérification: 'extended_tokens_daily' dans config après auto_select (liste vide): {len(auto_selected_tokens)} tokens.")
-        except Exception as e_cfg:
-            logger.error(f"Erreur relecture config pour vérification liste vide: {e_cfg}")
-            auto_selected_tokens = [] # Sécurité
-    else:
-        logger.info(f"{len(auto_selected_tokens)} tokens reçus de la sélection automatique.")
-        # Pas besoin de relire config.yaml pour cette liste, on l'a directement.
-        # auto_select_tokens.py est toujours censé avoir mis à jour config.yaml en parallèle.
+    # Attendre un peu pour que les écritures sur config.yaml par auto_select_tokens.py se terminent.
+    if auto_selected_tokens is not None:
+        logger.info("Attente de 0.5s pour la synchronisation disque de config.yaml.")
+        time.sleep(0.5)
+    
+    # Relire config.yaml pour obtenir la version la plus à jour (au cas où auto_select l'aurait modifié)
+    # et pour les autres paramètres.
+    try:
+        with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f) # Relit la config, potentiellement mise à jour
+        logger.info(f"Config relue depuis {CONFIG_FILE_PATH}.")
+    except Exception as e:
+        logger.error(f"Erreur lors de la relecture de {CONFIG_FILE_PATH}: {e}", exc_info=True); return
 
+    if auto_selected_tokens is None: # Échec critique de la sélection
+        logger.error("Échec critique de la sélection auto. Fallback sur 'extended_tokens_daily' de config (si existe).")
+        auto_selected_tokens = config.get("extended_tokens_daily", [])
+    elif not auto_selected_tokens: # Sélection réussie, mais 0 token trouvé
+        logger.warning("Aucun token retourné par la sélection auto. 'extended_tokens_daily' dans config devrait être vide.")
+        # S'assurer qu'on utilise bien la liste vide de la config si c'est le cas
+        auto_selected_tokens = config.get("extended_tokens_daily", [])
+
+    if not isinstance(auto_selected_tokens, list): auto_selected_tokens = []
+    
     manual_tokens = config.get("tokens_daily", [])
     if not isinstance(manual_tokens, list): manual_tokens = []
         
@@ -156,34 +177,30 @@ def daily_update_live(state, bexec):
         set(auto_selected_tokens).union(set(manual_tokens)).union(set(system_positions))
     ))
 
-    logger.info(f"Tokens from auto_select function: {len(auto_selected_tokens)} - Aperçu: {str(auto_selected_tokens[:10]) if auto_selected_tokens else '[]'}")
-    logger.info(f"Tokens from manual list (config:tokens_daily): {manual_tokens}")
-    logger.info(f"Tokens from current positions (state:positions_meta): {system_positions}")
-    logger.info(f"Liste finale combinée pour data_fetcher ({len(final_token_list_for_fetcher)} tokens) - Aperçu: {str(final_token_list_for_fetcher[:10]) if final_token_list_for_fetcher else '[]'}")
+    logger.info(f"Tokens from auto_select_func: {len(auto_selected_tokens)} - Aperçu: {str(auto_selected_tokens[:10]) if auto_selected_tokens else '[]'}")
+    logger.info(f"Tokens from manual list: {manual_tokens}")
+    logger.info(f"Tokens from positions: {system_positions}")
+    logger.info(f"Liste finale pour data_fetcher ({len(final_token_list_for_fetcher)} tokens) - Aperçu: {str(final_token_list_for_fetcher[:10]) if final_token_list_for_fetcher else '[]'}")
 
     if not final_token_list_for_fetcher:
-        logger.warning("La liste finale de tokens pour data_fetcher est vide. Arrêt du daily_update.")
+        logger.warning("Liste finale de tokens pour data_fetcher est vide. Arrêt du daily_update."); 
         try: pd.DataFrame().to_csv(DAILY_INFERENCE_CSV_PATH, index=False); logger.info(f"Fichier {os.path.basename(DAILY_INFERENCE_CSV_PATH)} vide créé.")
         except Exception as e_csv: logger.error(f"Erreur création CSV vide: {e_csv}");
         return
 
-    # Utiliser l'objet 'config' déjà chargé et potentiellement mis à jour par auto_select_tokens
-    config_for_temp = config.copy() 
-    config_for_temp["extended_tokens_daily"] = final_token_list_for_fetcher
+    config_for_temp = config.copy(); config_for_temp["extended_tokens_daily"] = final_token_list_for_fetcher
+    with open(CONFIG_TEMP_FILE_PATH, "w", encoding="utf-8") as fw: yaml.safe_dump(config_for_temp, fw, sort_keys=False)
+    logger.info(f"{os.path.basename(CONFIG_TEMP_FILE_PATH)} créé avec {len(final_token_list_for_fetcher)} tokens.")
 
-    with open(CONFIG_TEMP_FILE_PATH, "w", encoding="utf-8") as fw: 
-        yaml.safe_dump(config_for_temp, fw, sort_keys=False)
-    logger.info(f"{os.path.basename(CONFIG_TEMP_FILE_PATH)} créé avec {len(final_token_list_for_fetcher)} tokens dans extended_tokens_daily.")
-
-    # --- Le reste de la fonction daily_update_live (stratégie, data_fetcher, ml_decision, SELL, BUY) ---
-    # --- est identique à la version précédente que je vous ai fournie. ---
-    # --- S'assurer que les appels subprocess utilisent python_executable et cwd=PROJECT_ROOT ---
+    # --- Reste de daily_update_live ---
+    # (Stratégie, data_fetcher, ml_decision, SELL, BUY - identique à la version précédente)
+    # ... (copier le reste de la fonction daily_update_live à partir d'ici) ...
     strat = config.get("strategy", {}); sell_threshold = strat.get("sell_threshold", 0.3)
     try: big_gain_pct = float(strat.get("big_gain_exception_pct", 3.0))
     except ValueError: logger.error(f"Valeur invalide pour big_gain_exception_pct. Utilisation de 3.0."); big_gain_pct = 3.0
     buy_threshold  = strat.get("buy_threshold", 0.5)
     MIN_VALUE_TO_SELL = 5.0; MAX_VALUE_TO_SKIP_BUY = 20.0
-    python_executable = sys.executable # Défini au niveau du module
+    python_executable = sys.executable
 
     try:
         logger.info(f"Exécution de {os.path.basename(DATA_FETCHER_SCRIPT_PATH)} avec {CONFIG_TEMP_FILE_PATH}")
@@ -210,7 +227,7 @@ def daily_update_live(state, bexec):
                                     check=True, capture_output=True, text=True, cwd=PROJECT_ROOT, encoding='utf-8', errors='ignore')
         logger.info(f"{os.path.basename(ML_DECISION_SCRIPT_PATH)} exécuté avec succès.")
         if process_ml.stdout: logger.info(f"ml_decision stdout:\n{process_ml.stdout.strip()}")
-        if process_ml.stderr: logger.warning(f"ml_decision stderr:\n{process_ml.stderr.strip()}")
+        if process_ml.stderr: logger.warning(f"ml_decision stderr:\n{process_ml.stderr.strip()}") # Les warnings sklearn iront ici
     except subprocess.CalledProcessError as e:
         logger.error(f"{os.path.basename(ML_DECISION_SCRIPT_PATH)} a échoué (code: {e.returncode}).")
         if hasattr(e, 'stdout') and e.stdout: logger.error(f"ml_decision stdout de l'erreur:\n{e.stdout.strip()}")
@@ -314,17 +331,20 @@ def daily_update_live(state, bexec):
 
 
 def main():
-    config = {}
+    config = {} # Initialiser config pour qu'elle soit toujours définie
     if os.path.exists(CONFIG_FILE_PATH):
         try:
             with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f)
         except Exception as e_cfg_log:
+            # Utiliser print car le logger n'est pas encore configuré
             print(f"AVERTISSEMENT: Impossible de lire {CONFIG_FILE_PATH} pour la config du log: {e_cfg_log}. Utilisation des paramètres par défaut.")
+            config = {} # Assurer que config est un dict
     
-    log_settings = config.get("logging", {}) # Utiliser la config chargée ou un dict vide
+    log_settings = config.get("logging", {}) 
     log_file_path_main = configure_main_logging(log_settings)
 
+    # Le reste des logs utilisera 'logger'
     logger.info("======================================================================")
     logger.info(f"[MAIN] Démarrage du bot de trading MarsShot (PID: {os.getpid()}).")
     logger.info(f"[MAIN] Version Python: {sys.version.split()[0]}")
@@ -334,7 +354,7 @@ def main():
     logger.info("======================================================================")
 
     if not config: 
-        logger.critical(f"{CONFIG_FILE_PATH} est introuvable ou invalide. Arrêt.")
+        logger.critical(f"{CONFIG_FILE_PATH} est introuvable ou invalide après tentative de chargement. Arrêt.")
         return
 
     state = load_state() 
@@ -360,21 +380,20 @@ def main():
 
     logger.info(f"Boucle principale démarrée. Mise à jour quotidienne prévue à {DAILY_UPDATE_HOUR_UTC:02d}:{DAILY_UPDATE_MINUTE_UTC:02d} UTC.")
 
-    # Initialisation des clés de l'état si elles n'existent pas
-    changed_state = False
+    changed_state_on_init = False
     if "last_daily_update_ts" not in state: 
         state["last_daily_update_ts"] = 0 
         logger.info("'last_daily_update_ts' initialisé dans l'état.")
-        changed_state = True
+        changed_state_on_init = True
     if "last_risk_check_ts" not in state: 
         state["last_risk_check_ts"] = 0
         logger.info("'last_risk_check_ts' initialisé dans l'état.")
-        changed_state = True
+        changed_state_on_init = True
     if "did_daily_update_today" not in state:
         state["did_daily_update_today"] = False
         logger.info("'did_daily_update_today' initialisé dans l'état.")
-        changed_state = True
-    if changed_state:
+        changed_state_on_init = True
+    if changed_state_on_init:
         save_state(state)
 
     while True:
