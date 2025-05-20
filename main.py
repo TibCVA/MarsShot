@@ -53,63 +53,120 @@ def load_probabilities_csv(csv_path=DAILY_PROBABILITIES_CSV_PATH):
 
 
 def run_auto_select_once_per_day(state_unused):
+    """Retourne la liste des tokens sélectionnés via auto_select_tokens.
+
+    La fonction tente d'abord d'importer ``auto_select_tokens`` et d'exécuter
+    sa logique directement pour récupérer la liste des meilleurs tokens. En cas
+    d'échec, un fallback via ``subprocess`` est effectué. ``None`` est renvoyé si
+    aucune liste n'a pu être obtenue.
     """
-    Exécute auto_select_tokens.py et récupère la liste des tokens sélectionnés depuis stdout.
-    Tente également de mettre à jour config.yaml via le script.
-    Retourne la liste des tokens sélectionnés, ou None en cas d'échec majeur.
-    """
-    logger.info(f"Tentative d'exécution de {AUTO_SELECT_SCRIPT_PATH} pour la sélection automatique des tokens.")
-    
+
+    logger.info(
+        f"Tentative d'exécution de {AUTO_SELECT_SCRIPT_PATH} pour la sélection automatique des tokens."
+    )
+
+    selected_tokens = None
+
+    # --------------------------------------------------------------
+    # 1) Tentative via import direct du module auto_select_tokens
+    # --------------------------------------------------------------
+    try:
+        import auto_select_tokens as ast
+
+        with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f_cfg:
+            cfg = yaml.safe_load(f_cfg)
+
+        api_key = cfg.get("binance_api", {}).get("api_key")
+        api_secret = cfg.get("binance_api", {}).get("api_secret")
+        top_n = cfg.get("strategy", {}).get("auto_select_top_n", 60)
+
+        if api_key and api_secret:
+            client = ast.Client(api_key, api_secret)
+            client.ping()
+            selected_tokens = ast.select_top_tokens(client, top_n=top_n)
+            ast.update_config_with_new_tokens(CONFIG_FILE_PATH, selected_tokens)
+            logger.info(
+                f"Sélection interne réussie via import: {len(selected_tokens)} tokens."
+            )
+        else:
+            logger.error(
+                "Clés API Binance manquantes dans la configuration pour la sélection interne."
+            )
+    except Exception as e:
+        logger.error(
+            "Sélection interne via import de auto_select_tokens échouée: %s",
+            e,
+            exc_info=True,
+        )
+        selected_tokens = None
+
+    if selected_tokens:
+        return selected_tokens
+
+    # --------------------------------------------------------------
+    # 2) Fallback : exécution du script via subprocess
+    # --------------------------------------------------------------
     if not os.path.exists(AUTO_SELECT_SCRIPT_PATH):
         logger.error(f"Script {AUTO_SELECT_SCRIPT_PATH} introuvable.")
-        return None # Échec
+        return None
 
-    selected_tokens_from_script = None
     try:
         python_executable = sys.executable
-        process = subprocess.run([python_executable, AUTO_SELECT_SCRIPT_PATH], 
-                                 capture_output=True, # On ne met plus check=True ici, on analyse la sortie
-                                 text=True, 
-                                 cwd=PROJECT_ROOT)
-        
-        # Logguer stderr (qui contient les logs de auto_select_tokens.py)
-        if process.stderr:
-            logger.info(f"Stderr (logs) de {os.path.basename(AUTO_SELECT_SCRIPT_PATH)}:\n{process.stderr.strip()}")
+        process = subprocess.run(
+            [python_executable, AUTO_SELECT_SCRIPT_PATH],
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+        )
 
-        # Analyser stdout pour la sortie JSON
+        if process.stderr:
+            logger.info(
+                f"Stderr (logs) de {os.path.basename(AUTO_SELECT_SCRIPT_PATH)}:\n{process.stderr.strip()}"
+            )
+
         if process.stdout:
-            logger.info(f"Stdout de {os.path.basename(AUTO_SELECT_SCRIPT_PATH)}:\n{process.stdout.strip()}")
-            # Chercher la ligne JSON_OUTPUT
+            logger.info(
+                f"Stdout de {os.path.basename(AUTO_SELECT_SCRIPT_PATH)}:\n{process.stdout.strip()}"
+            )
             for line in process.stdout.strip().splitlines():
                 if line.startswith("JSON_OUTPUT:"):
                     try:
                         json_str = line.replace("JSON_OUTPUT:", "").strip()
                         payload = json.loads(json_str)
                         if payload.get("status") == "ok":
-                            selected_tokens_from_script = payload.get("tokens", [])
-                            logger.info(f"{len(selected_tokens_from_script)} tokens récupérés depuis la sortie de auto_select_tokens.py.")
+                            selected_tokens = payload.get("tokens", [])
+                            logger.info(
+                                f"{len(selected_tokens)} tokens récupérés depuis la sortie de auto_select_tokens.py."
+                            )
                         else:
-                            logger.error(f"auto_select_tokens.py a signalé une erreur: {payload.get('message', 'Message non spécifié')}")
-                        break # Sortir après avoir trouvé et traité la ligne JSON
+                            logger.error(
+                                f"auto_select_tokens.py a signalé une erreur: {payload.get('message', 'Message non spécifié')}"
+                            )
+                        break
                     except json.JSONDecodeError as e_json:
-                        logger.error(f"Impossible de parser la sortie JSON de auto_select_tokens.py: {e_json}. Sortie: {line}")
+                        logger.error(
+                            f"Impossible de parser la sortie JSON de auto_select_tokens.py: {e_json}. Sortie: {line}"
+                        )
                     except Exception as e_payload:
-                        logger.error(f"Erreur lors du traitement du payload JSON de auto_select_tokens.py: {e_payload}. Payload: {payload if 'payload' in locals() else 'Non parsé'}")
-            
-            if selected_tokens_from_script is None: # Si JSON_OUTPUT n'a pas été trouvé ou n'était pas ok
-                 logger.warning("Aucune liste de tokens valide (JSON_OUTPUT) n'a été trouvée dans la sortie de auto_select_tokens.py.")
+                        logger.error(
+                            f"Erreur lors du traitement du payload JSON de auto_select_tokens.py: {e_payload}."
+                        )
 
         if process.returncode != 0:
-            logger.error(f"{os.path.basename(AUTO_SELECT_SCRIPT_PATH)} s'est terminé avec le code d'erreur {process.returncode}.")
-            # Même s'il y a un code d'erreur, on peut avoir récupéré une liste partielle ou un message d'erreur via JSON
-            # selected_tokens_from_script pourrait être None ou une liste vide.
-            # On ne retourne pas None ici, car on veut peut-être utiliser une liste vide si c'est ce que le script a signalé.
+            logger.error(
+                f"{os.path.basename(AUTO_SELECT_SCRIPT_PATH)} s'est terminé avec le code d'erreur {process.returncode}."
+            )
 
-        return selected_tokens_from_script # Peut être None si JSON non trouvé/erreur, ou une liste (potentiellement vide)
+        return selected_tokens
 
     except Exception as e:
-        logger.error(f"Exception inattendue lors de l'exécution de {os.path.basename(AUTO_SELECT_SCRIPT_PATH)}: {e}", exc_info=True)
-        return None # Échec majeur
+        logger.error(
+            "Exception inattendue lors de l'exécution de %s: %s",
+            os.path.basename(AUTO_SELECT_SCRIPT_PATH),
+            e,
+            exc_info=True,
+        )
+        return None
 
 
 def daily_update_live(state, bexec):
