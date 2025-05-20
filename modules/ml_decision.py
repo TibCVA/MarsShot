@@ -7,104 +7,197 @@ import numpy as np
 import pandas as pd
 import joblib
 from datetime import datetime
-import sys 
 
-logger = logging.getLogger("ml_decision_logic")
-if not logger.hasHandlers():
-    _handler_ml = logging.StreamHandler(sys.stderr)
-    _formatter_ml = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s.%(funcName)s:%(lineno)d - %(message)s")
-    _handler_ml.setFormatter(_formatter_ml)
-    logger.addHandler(_handler_ml)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-CURRENT_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT_ML = os.path.join(CURRENT_MODULE_DIR, "..")
+# MODIFICATION: Nom du fichier modèle mis à jour
+MODEL_FILE        = os.path.join(CURRENT_DIR, "..", "model_deuxpointcinq.pkl")
+INPUT_CSV         = os.path.join(CURRENT_DIR, "..", "daily_inference_data.csv")
+OUTPUT_PROBA_CSV  = os.path.join(CURRENT_DIR, "..", "daily_probabilities.csv")
+LOG_FILE          = "ml_decision.log" # Le nom du fichier log peut rester le même ou être versionné
 
-MODEL_FILE        = os.path.join(PROJECT_ROOT_ML, "model_deuxpointcinq.pkl")
-INPUT_CSV         = os.path.join(PROJECT_ROOT_ML, "daily_inference_data.csv")
-OUTPUT_PROBA_CSV  = os.path.join(PROJECT_ROOT_ML, "daily_probabilities.csv")
-
+# MODIFICATION: COLUMNS_ORDER mise à jour pour model_deuxpointcinq.pkl
+# Correspond à la liste 'expected_features' de train_model_v4.py, triée.
 COLUMNS_ORDER = sorted([
     "rsi14", "rsi30", "atr14", "macd_std", "stoch_rsi_k", "stoch_rsi_d", "mfi14", "boll_percent_b", "obv", "adx", "adx_pos", "adx_neg", "ma_close_7d", "ma_close_14d",
-    "galaxy_score", "alt_rank", "sentiment", "social_dominance", "market_dominance", 
-    "delta_close_1d", "delta_close_3d", "delta_vol_1d", "delta_vol_3d", "delta_mcap_1d", "delta_mcap_3d",
-    "delta_galaxy_score_1d", "delta_alt_rank_3d", "delta_social_dom_1d", "delta_social_dom_3d",
+    "galaxy_score", "alt_rank", "sentiment", "social_dominance", "market_dominance", # Les brutes sont utilisées par le modèle
+    "delta_close_1d", "delta_close_3d",
+    "delta_vol_1d", "delta_vol_3d",
+    "delta_mcap_1d", "delta_mcap_3d",
+    "delta_galaxy_score_1d", # delta_galaxy_score_3d est retiré
+    "delta_alt_rank_3d",
+    "delta_social_dom_1d", "delta_social_dom_3d",
     "delta_market_dom_1d", "delta_market_dom_3d",
     "atr14_norm", "price_change_norm_atr1d", "rsi14_roc3d",
-    "ma_slope_7d", "ma_slope_14d", "boll_width_norm", "volume_norm_ma20",
-    "galaxy_score_norm_ma7", "sentiment_ma_diff7", "alt_rank_roc1d", "alt_rank_roc7d",
+    "ma_slope_7d", "ma_slope_14d", "boll_width_norm",
+    "volume_norm_ma20", # Pour le token lui-même
+    "galaxy_score_norm_ma7", "sentiment_ma_diff7",
+    "alt_rank_roc1d", "alt_rank_roc7d",
     "btc_daily_change", "btc_3d_change", "eth_daily_change", "eth_3d_change",
-    "btc_atr_norm", "btc_rsi", "eth_atr_norm", "eth_rsi",
-    "rsi_vs_btc", "atr_norm_vs_btc", "volatility_ratio_vs_market", "obv_slope_5d"
+    "btc_atr_norm", "btc_rsi", "eth_atr_norm", "eth_rsi", # btc/eth_volume_norm_ma20 ne sont PAS dans expected_features du modèle final
+    "rsi_vs_btc", "atr_norm_vs_btc",
+    "volatility_ratio_vs_market",
+    "obv_slope_5d"
 ])
 
-def main_ml_decision():
-    logger.info(f"=== START ml_decision (BATCH) using {os.path.basename(MODEL_FILE)} ===")
-    logger.info(f"Vérification du fichier modèle => {MODEL_FILE}")
+logging.basicConfig(
+    filename=LOG_FILE,
+    filemode='a', # Conserver 'a' pour ajouter aux logs existants
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+logging.info("=== START ml_decision (BATCH) using model_deuxpointcinq.pkl ===") # Log mis à jour
+
+def main():
+    logging.info("[ML_DECISION] Checking model file => %s", MODEL_FILE)
     if not os.path.exists(MODEL_FILE):
-        logger.error(f"Fichier modèle {MODEL_FILE} introuvable."); print(f"[ERREUR_ML] {MODEL_FILE} introuvable."); return 1
-    logger.info(f"Vérification du fichier CSV d'entrée => {INPUT_CSV}")
+        logging.error(f"[ERROR] {MODEL_FILE} introuvable => impossible de prédire.")
+        print(f"[ERROR] {MODEL_FILE} introuvable => skip.")
+        return
+
+    logging.info("[ML_DECISION] Checking input CSV => %s", INPUT_CSV)
     if not os.path.exists(INPUT_CSV):
-        logger.error(f"Fichier d'entrée {INPUT_CSV} introuvable."); print(f"[ERREUR_ML] {INPUT_CSV} introuvable."); return 1
+        logging.error(f"[ERROR] {INPUT_CSV} introuvable => impossible de prédire.")
+        print(f"[ERROR] {INPUT_CSV} introuvable => skip.")
+        return
+
     try:
         df = pd.read_csv(INPUT_CSV)
     except Exception as e:
-        logger.error(f"Échec lecture {INPUT_CSV}: {e}", exc_info=True); print(f"[ERREUR_ML] Échec lecture {INPUT_CSV}: {e}"); return 1
+        logging.error(f"[ERROR] Failed to read {INPUT_CSV}: {e}")
+        print(f"[ERROR] Failed to read {INPUT_CSV}: {e}")
+        return
+        
     if df.empty:
-        logger.warning(f"{os.path.basename(INPUT_CSV)} est vide. Aucune prédiction.");
-        try:
-            pd.DataFrame(columns=["symbol", "prob"]).to_csv(OUTPUT_PROBA_CSV, index=False)
-            logger.info(f"Fichier probabilités vide créé: {OUTPUT_PROBA_CSV}"); print(f"[OK_ML] {os.path.basename(INPUT_CSV)} vide, {os.path.basename(OUTPUT_PROBA_CSV)} vide créé.")
-        except Exception as e_csv: logger.error(f"Erreur création fichier prob vide: {e_csv}"); print(f"[ERREUR_ML] Erreur création fichier prob vide: {e_csv}"); return 1
-        return 0
+        logging.warning("[WARN] daily_inference_data.csv est vide => aucune prédiction possible.")
+        print("[WARN] empty daily_inference_data.csv => skip.")
+        return
+
+    # S'assurer que 'date' et 'symbol' sont présentes avant de les ajouter à needed_cols
+    # pour éviter une erreur si elles manquaient pour une raison imprévue.
     base_needed_cols = ["symbol", "date"]
     for base_col in base_needed_cols:
-        if base_col not in df.columns: logger.error(f"Colonne '{base_col}' manquante dans {INPUT_CSV}"); print(f"[ERREUR_ML] Colonne '{base_col}' manquante."); return 1
-    missing_in_csv = [col for col in COLUMNS_ORDER if col not in df.columns]
-    if missing_in_csv: logger.error(f"Colonnes features manquantes dans {INPUT_CSV} pour {os.path.basename(MODEL_FILE)}: {missing_in_csv}"); print(f"[ERREUR_ML] Colonnes features manquantes: {missing_in_csv}"); return 1
+        if base_col not in df.columns:
+            logging.error(f"[ERROR] Colonne essentielle '{base_col}' manquante dans {INPUT_CSV}")
+            print(f"[ERROR] Colonne essentielle '{base_col}' manquante dans {INPUT_CSV}")
+            return
+            
+    needed_cols_for_check = COLUMNS_ORDER + base_needed_cols
+    missing = [col for col in needed_cols_for_check if col not in df.columns]
+    if missing:
+        logging.error(f"[ERROR] Colonnes manquantes dans {INPUT_CSV} pour le modèle {os.path.basename(MODEL_FILE)}: {missing}")
+        print(f"[ERROR] Colonnes manquantes: {missing}")
+        return
+
+    # Conversion de "date" en datetime et filtrage sur les données complètes (bucket J-1)
     df["date_dt"] = pd.to_datetime(df["date"], errors="coerce")
-    if df["date_dt"].isnull().any(): logger.warning(f"{df['date_dt'].isnull().sum()} lignes dates invalides supprimées."); df.dropna(subset=["date_dt"], inplace=True)
-    if df.empty: logger.error(f"Aucune donnée date valide."); print(f"[ERREUR_ML] Pas de données date valide."); return 1
-    today = datetime.utcnow().date(); df = df[df["date_dt"].dt.date < today]
-    if df.empty: logger.error(f"Aucune donnée J-1 ou antérieure."); print(f"[ERREUR_ML] Pas de données J-1."); return 1
-    for col in COLUMNS_ORDER:
-        if df[col].dtype == 'object':
-            try: df[col] = pd.to_numeric(df[col], errors='raise')
-            except ValueError as e_conv: logger.error(f"Erreur conversion numérique '{col}': {e_conv}. Ex: {df[col].unique()[:5]}"); print(f"[ERREUR_ML] Erreur conversion '{col}'."); return 1
-        df[col] = df[col].astype(float)
-    df.replace([np.inf, -np.inf], np.nan, inplace=True)
-    rows_before_dropna = len(df); df.dropna(subset=COLUMNS_ORDER, inplace=True); rows_after_dropna = len(df)
-    if rows_after_dropna < rows_before_dropna: logger.warning(f"Suppression {rows_before_dropna - rows_after_dropna} lignes (NaN features).")
-    if df.empty: logger.warning(f"Plus aucune ligne après dropna features. Skip."); print(f"[WARN_ML] Pas de données après dropna."); return 0
+    # Gérer les NaT qui pourraient résulter de 'coerce'
+    if df["date_dt"].isnull().any():
+        logging.warning(f"[WARN] {df['date_dt'].isnull().sum()} lignes avec dates invalides ont été supprimées.")
+        df.dropna(subset=["date_dt"], inplace=True)
+
+    if df.empty: # Vérifier à nouveau après suppression des NaT
+        logging.error("[ERROR] Aucune donnée avec date valide disponible.")
+        print("[ERROR] Pas de données avec date valide.")
+        return
+
+    today = datetime.utcnow().date()
+    df = df[df["date_dt"].dt.date < today] # Utilise uniquement les données jusqu'à la veille (J-1)
+    
+    if df.empty:
+        logging.error("[ERROR] Aucune donnée complète (J-1 ou antérieure) disponible après filtrage par date.")
+        print("[ERROR] Pas de données pour J-1 ou antérieures.")
+        return
+
+    # Suppression des lignes où les features sont NaN (uniquement pour les colonnes de features)
+    before = len(df)
+    df.dropna(subset=COLUMNS_ORDER, inplace=True) # COLUMNS_ORDER contient uniquement les features
+    after = len(df)
+    if after < before:
+        logging.warning(f"[WARN] Drop {before - after} lignes en raison de NaN dans les features: {COLUMNS_ORDER}")
+    if df.empty:
+        logging.warning("[WARN] Plus aucune ligne après suppression des NaN dans les features => skip.")
+        print("[WARN] no data after NaN drop in features => skip.")
+        return
+
+    # Chargement du modèle
     try:
-        loaded_model_artifact = joblib.load(MODEL_FILE); logger.info(f"Modèle {os.path.basename(MODEL_FILE)} chargé. Type: {type(loaded_model_artifact)}")
+        loaded_model_artifact = joblib.load(MODEL_FILE)
+        logging.info(f"[ML_DECISION] Modèle {os.path.basename(MODEL_FILE)} chargé. Type: {type(loaded_model_artifact)}")
+        
+        # La logique de détection du type de modèle (tuple, dict, pipeline direct) est conservée.
+        # S'assurer qu'elle est toujours pertinente pour model_deuxpointcinq.pkl.
+        # D'après train_model_v4.py, le modèle sauvegardé est un Pipeline scikit-learn.
+        
         model_to_predict = None
-        if hasattr(loaded_model_artifact, 'predict_proba'): model_to_predict = loaded_model_artifact; logger.info("Modèle détecté comme pipeline direct.")
-        elif isinstance(loaded_model_artifact, tuple) and len(loaded_model_artifact) == 2: model_to_predict, _ = loaded_model_artifact; logger.info("Modèle détecté comme tuple.")
-        elif isinstance(loaded_model_artifact, dict) and "pipeline" in loaded_model_artifact: model_to_predict = loaded_model_artifact["pipeline"]; logger.info("Modèle détecté comme dict avec 'pipeline'.")
-        else: logger.error(f"Structure modèle non reconnue: {type(loaded_model_artifact)}"); print(f"[ERREUR_ML] Structure modèle non reconnue"); return 1
-        if not hasattr(model_to_predict, 'predict_proba'): logger.error(f"Modèle/pipeline n'a pas predict_proba."); print(f"[ERREUR_ML] Modèle ne peut prédire probas."); return 1
-    except Exception as e: logger.error(f"Erreur chargement modèle {MODEL_FILE}: {e}", exc_info=True); print(f"[ERREUR_ML] Erreur chargement modèle: {e}"); return 1
+        if isinstance(loaded_model_artifact, tuple) and len(loaded_model_artifact) == 2: # Cas ancien modèle
+            model_to_predict, _ = loaded_model_artifact # custom_threshold non utilisé ici pour la proba brute
+            logging.info(f"[ML_DECISION] Modèle détecté comme tuple (ancien format).")
+        
+        elif isinstance(loaded_model_artifact, dict) and "pipeline" in loaded_model_artifact: # Cas ancien modèle "business"
+            model_to_predict = loaded_model_artifact["pipeline"]
+            logging.info(f"[ML_DECISION] Modèle détecté comme dictionnaire avec clé 'pipeline'.")
+        
+        elif hasattr(loaded_model_artifact, 'predict_proba'): # Cas pipeline scikit-learn direct (attendu pour model_deuxpointcinq.pkl)
+            model_to_predict = loaded_model_artifact
+            logging.info(f"[ML_DECISION] Modèle détecté comme pipeline scikit-learn direct.")
+        
+        else:
+            logging.error(f"[ML_DECISION] Structure de modèle non reconnue pour {MODEL_FILE}: {type(loaded_model_artifact)}")
+            if isinstance(loaded_model_artifact, dict):
+                logging.error(f"[ML_DECISION] Clés disponibles dans le dictionnaire: {list(loaded_model_artifact.keys())}")
+            print(f"[ERROR] Structure de modèle non reconnue pour {MODEL_FILE}")
+            return
+        
+        if not hasattr(model_to_predict, 'predict_proba'):
+            logging.error(f"[ML_DECISION] Le modèle/pipeline chargé depuis {MODEL_FILE} n'a pas de méthode predict_proba.")
+            print(f"[ERROR] Le modèle/pipeline de {MODEL_FILE} ne peut pas faire de prédictions de probabilité.")
+            return
+            
+    except Exception as e:
+        logging.error(f"[ERROR] Erreur lors du chargement du modèle {MODEL_FILE}: {e}", exc_info=True)
+        print(f"[ERROR] Erreur lors du chargement du modèle {MODEL_FILE}: {e}")
+        return
+
+    # Prédiction
     try:
-        X_for_predict = df[COLUMNS_ORDER]
-        non_numeric_final = X_for_predict.select_dtypes(exclude=[np.number]).columns
-        if not non_numeric_final.empty: logger.error(f"Colonnes non numériques DANS X_for_predict: {non_numeric_final.tolist()}."); print(f"[ERREUR_ML] Colonnes non numériques DANS X_for_predict."); return 1
-        logger.info(f"Prédiction sur {len(X_for_predict)} lignes, {len(X_for_predict.columns)} features.")
-        probs = model_to_predict.predict_proba(X_for_predict)[:, 1]; df["prob"] = probs
+        # S'assurer que df[COLUMNS_ORDER] ne contient que des types numériques et pas d'objets/strings
+        X_features = df[COLUMNS_ORDER]
+        non_numeric_cols = X_features.select_dtypes(exclude=[np.number]).columns
+        if not non_numeric_cols.empty:
+            logging.error(f"[ERROR] Colonnes non numériques trouvées dans les features avant la prédiction: {non_numeric_cols.tolist()}. Vérifiez {INPUT_CSV}.")
+            for col in non_numeric_cols:
+                logging.error(f"Exemple de valeurs pour la colonne non numérique '{col}': {X_features[col].unique()[:5]}")
+            print(f"[ERROR] Colonnes non numériques dans les features: {non_numeric_cols.tolist()}")
+            return
+
+        X = X_features.values.astype(float) # Conversion explicite en float
+        probs = model_to_predict.predict_proba(X)[:, 1] # Probabilité de la classe positive (1)
+        df["prob"] = probs
+        
+        # Groupement par token pour obtenir uniquement la dernière ligne (la plus récente) par token
+        # Assurer que 'date_dt' et 'symbol' sont bien dans df
         df_last_per_token = df.sort_values("date_dt").groupby("symbol", as_index=False).tail(1)
-        df_out = df_last_per_token[["symbol", "prob"]].copy(); df_out.sort_values("symbol", inplace=True); df_out.reset_index(drop=True, inplace=True)
+        
+        # Sélectionner uniquement 'symbol' et 'prob' pour la sortie
+        df_out = df_last_per_token[["symbol", "prob"]].copy()
+        df_out.sort_values("symbol", inplace=True)
+        df_out.reset_index(drop=True, inplace=True)
+        
         df_out.to_csv(OUTPUT_PROBA_CSV, index=False)
-        msg_ok = f"{os.path.basename(OUTPUT_PROBA_CSV)} généré ({len(df_out)} tokens) pour {os.path.basename(MODEL_FILE)}."
-        logger.info(msg_ok); print(f"[OK_ML] {msg_ok}")
-        logger.info(f"Probabilités (J-1) pour {os.path.basename(MODEL_FILE)}:")
-        for _, row in df_out.iterrows(): logger.info(f"  {row['symbol']}: {row['prob']:.4f}")
-    except Exception as e: logger.error(f"Erreur prédiction avec {MODEL_FILE}: {e}", exc_info=True); print(f"[ERREUR_ML] Erreur prédictions: {e}"); return 1
-    logger.info(f"=== END ml_decision (BATCH) pour {os.path.basename(MODEL_FILE)} ==="); return 0
+        logging.info(f"[OK] => {OUTPUT_PROBA_CSV} généré avec {len(df_out)} tokens pour le modèle {os.path.basename(MODEL_FILE)}.")
+        print(f"[OK] => {OUTPUT_PROBA_CSV} ({len(df_out)} tokens) for {os.path.basename(MODEL_FILE)}.")
+        
+        logging.info("Probabilités (J-1) utilisées par token (modèle %s):", os.path.basename(MODEL_FILE))
+        for _, row in df_out.iterrows():
+            logging.info(f"Token: {row['symbol']}, Prob (J-1): {row['prob']:.4f}")
+            
+    except Exception as e:
+        logging.error(f"[ERROR] Erreur lors de la phase de prédiction avec {MODEL_FILE}: {e}", exc_info=True)
+        print(f"[ERROR] Erreur lors des prédictions avec {MODEL_FILE}: {e}")
+        return
+
+    logging.info("=== END ml_decision (BATCH) ===")
 
 if __name__=="__main__":
-    if not logging.getLogger("ml_decision_logic").hasHandlers() and not logging.getLogger().hasHandlers():
-        logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s.%(funcName)s:%(lineno)d - %(message)s", handlers=[logging.StreamHandler(sys.stderr)])
-        logger.info("Logging de base configuré pour exécution directe de ml_decision.py.")
-    exit_code = main_ml_decision()
-    sys.exit(exit_code)
+    main()
