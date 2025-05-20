@@ -9,7 +9,7 @@ import os
 import pytz
 import subprocess
 import json # Pour logger le contenu de config
-import sys # <--- AJOUTÉ ICI
+import sys # <--- ASSUREZ-VOUS QUE CET IMPORT EST PRÉSENT
 
 from modules.trade_executor import TradeExecutor
 from modules.positions_store import load_state, save_state
@@ -23,12 +23,11 @@ CONFIG_TEMP_FILE_PATH = os.path.join(PROJECT_ROOT, "config_temp.yaml")
 DAILY_PROBABILITIES_CSV_PATH = os.path.join(PROJECT_ROOT, "daily_probabilities.csv")
 DAILY_INFERENCE_CSV_PATH = os.path.join(PROJECT_ROOT, "daily_inference_data.csv")
 AUTO_SELECT_SCRIPT_PATH = os.path.join(PROJECT_ROOT, "auto_select_tokens.py")
-# Assurez-vous que ces chemins vers les scripts dans modules sont corrects
 DATA_FETCHER_SCRIPT_PATH = os.path.join(PROJECT_ROOT, "modules", "data_fetcher.py")
 ML_DECISION_SCRIPT_PATH = os.path.join(PROJECT_ROOT, "modules", "ml_decision.py")
 
 
-def load_probabilities_csv(csv_path=DAILY_PROBABILITIES_CSV_PATH): # Utilise la constante
+def load_probabilities_csv(csv_path=DAILY_PROBABILITIES_CSV_PATH):
     import pandas as pd
     if not os.path.exists(csv_path):
         logging.warning(f"[load_probabilities_csv] {csv_path} introuvable => return {{}}")
@@ -52,17 +51,10 @@ def load_probabilities_csv(csv_path=DAILY_PROBABILITIES_CSV_PATH): # Utilise la 
         return {}
 
 def run_auto_select_once_per_day(state): # state n'est plus utilisé pour la condition ici
-    """
-    Exécute auto_select_tokens.py.
-    Ce script est censé mettre à jour config.yaml avec la clé 'extended_tokens_daily'.
-    Retourne True si le script semble s'être exécuté sans erreur signalée par subprocess, False sinon.
-    """
     logging.info(f"[MAIN run_auto_select] Tentative d'exécution de {AUTO_SELECT_SCRIPT_PATH}")
-    
     if not os.path.exists(AUTO_SELECT_SCRIPT_PATH):
         logging.error(f"[MAIN run_auto_select] Script {AUTO_SELECT_SCRIPT_PATH} introuvable.")
         return False
-
     try:
         python_executable = sys.executable 
         process = subprocess.run([python_executable, AUTO_SELECT_SCRIPT_PATH], 
@@ -75,11 +67,11 @@ def run_auto_select_once_per_day(state): # state n'est plus utilisé pour la con
         return True 
     except subprocess.CalledProcessError as e:
         logging.error(f"[MAIN run_auto_select] Erreur lors de l'exécution de {os.path.basename(AUTO_SELECT_SCRIPT_PATH)} (code: {e.returncode}): {e}")
-        if e.stdout: logging.error(f"[MAIN run_auto_select] Stdout de l'erreur:\n{e.stdout.strip()}")
-        if e.stderr: logging.error(f"[MAIN run_auto_select] Stderr de l'erreur:\n{e.stderr.strip()}")
+        if hasattr(e, 'stdout') and e.stdout: logging.error(f"[MAIN run_auto_select] Stdout de l'erreur:\n{e.stdout.strip()}")
+        if hasattr(e, 'stderr') and e.stderr: logging.error(f"[MAIN run_auto_select] Stderr de l'erreur:\n{e.stderr.strip()}")
         return False
     except FileNotFoundError:
-        logging.error(f"[MAIN run_auto_select] Interpréteur Python '{python_executable}' ou script non trouvé. Vérifiez le chemin et l'environnement.")
+        logging.error(f"[MAIN run_auto_select] Interpréteur Python '{python_executable}' ou script '{AUTO_SELECT_SCRIPT_PATH}' non trouvé. Vérifiez le chemin et l'environnement.")
         return False
     except Exception as e:
         logging.error(f"[MAIN run_auto_select] Exception inattendue: {e}", exc_info=True)
@@ -88,43 +80,42 @@ def run_auto_select_once_per_day(state): # state n'est plus utilisé pour la con
 
 def daily_update_live(state, bexec):
     logging.info("[DAILY UPDATE] Start daily_update_live")
-
     logging.info("[DAILY UPDATE] Appel de run_auto_select_once_per_day depuis daily_update_live.")
     auto_select_success = run_auto_select_once_per_day(state)
 
     if not auto_select_success:
-        logging.error("[DAILY UPDATE] auto_select_tokens.py n'a pas pu s'exécuter correctement. La liste de tokens pourrait être incomplète.")
+        logging.error("[DAILY UPDATE] auto_select_tokens.py n'a pas pu s'exécuter correctement ou a signalé une erreur. La liste de tokens pourrait être incomplète ou périmée.")
     else:
         logging.info("[DAILY UPDATE] auto_select_tokens.py semble s'être exécuté. Attente de 1s pour s'assurer que les écritures disque sont terminées.")
-        time.sleep(1) 
+        time.sleep(1)
 
     if not os.path.exists(CONFIG_FILE_PATH):
         logging.error(f"[DAILY UPDATE] {CONFIG_FILE_PATH} introuvable => skip daily_update.")
         return
 
     try:
-        with open(CONFIG_FILE_PATH, "r") as f:
-            config_content_before_processing = f.read() 
-        with open(CONFIG_FILE_PATH, "r") as f: 
+        with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
+            config_content_for_log = f.read()
+        with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
-        logging.debug(f"[DAILY UPDATE] Contenu de {CONFIG_FILE_PATH} lu (après auto_select_tokens):\n{config_content_before_processing[:1000]}...") 
+        logging.info(f"[DAILY UPDATE] Contenu de {CONFIG_FILE_PATH} lu (après tentative auto_select_tokens). 'extended_tokens_daily' est: {config.get('extended_tokens_daily', 'Non présente')[:200] if isinstance(config.get('extended_tokens_daily'), (list,str)) else config.get('extended_tokens_daily', 'Non présente') }")
     except Exception as e:
-        logging.error(f"[DAILY UPDATE] Erreur lors de la lecture de {CONFIG_FILE_PATH} après auto_select: {e}")
+        logging.error(f"[DAILY UPDATE] Erreur lors de la lecture de {CONFIG_FILE_PATH} après auto_select: {e}", exc_info=True)
         return
 
     auto_selected_tokens = config.get("extended_tokens_daily", [])
-    if not isinstance(auto_selected_tokens, list): 
+    if not isinstance(auto_selected_tokens, list):
         logging.warning(f"[DAILY UPDATE] 'extended_tokens_daily' dans config n'est pas une liste (type: {type(auto_selected_tokens)}). Utilisation d'une liste vide.")
         auto_selected_tokens = []
-    if not auto_selected_tokens and auto_select_success:
-        logging.warning("[DAILY UPDATE] auto_select_tokens.py s'est exécuté mais 'extended_tokens_daily' est vide ou absente de config.yaml.")
+    if not auto_selected_tokens and auto_select_success: # Si auto_select a réussi mais que la liste est vide
+        logging.warning("[DAILY UPDATE] auto_select_tokens.py s'est exécuté mais 'extended_tokens_daily' est vide dans config.yaml. Cela peut être normal si aucun token ne correspond aux critères de sélection.")
     
     manual_tokens = config.get("tokens_daily", [])
     if not isinstance(manual_tokens, list): manual_tokens = []
         
     system_positions = list(state.get("positions_meta", {}).keys())
 
-    final_token_list_for_fetcher = sorted(list( 
+    final_token_list_for_fetcher = sorted(list(
         set(auto_selected_tokens).union(set(manual_tokens)).union(set(system_positions))
     ))
 
@@ -133,20 +124,30 @@ def daily_update_live(state, bexec):
     logging.info(f"[DAILY UPDATE] Tokens from current positions (state:positions_meta): {system_positions}")
     logging.info(f"[DAILY UPDATE] Final combined list for data_fetcher ({len(final_token_list_for_fetcher)} tokens) - Aperçu: {final_token_list_for_fetcher[:10] if final_token_list_for_fetcher else '[]'}")
 
+    if not final_token_list_for_fetcher:
+        logging.warning("[DAILY UPDATE] La liste finale de tokens pour data_fetcher est vide. Arrêt du daily_update.")
+        # Créer un daily_inference_data.csv vide pour éviter des erreurs en aval si c'est le comportement attendu
+        try:
+            pd.DataFrame().to_csv(DAILY_INFERENCE_CSV_PATH, index=False)
+            logging.info(f"[DAILY UPDATE] Fichier {os.path.basename(DAILY_INFERENCE_CSV_PATH)} vide créé.")
+        except Exception as e_csv:
+            logging.error(f"[DAILY UPDATE] Erreur lors de la création du fichier CSV vide: {e_csv}")
+        return
+
     config_for_temp = config.copy()
     config_for_temp["extended_tokens_daily"] = final_token_list_for_fetcher
 
-    with open(CONFIG_TEMP_FILE_PATH, "w") as fw: 
+    with open(CONFIG_TEMP_FILE_PATH, "w") as fw:
         yaml.safe_dump(config_for_temp, fw, sort_keys=False)
     logging.info(f"[DAILY UPDATE] {os.path.basename(CONFIG_TEMP_FILE_PATH)} créé avec {len(final_token_list_for_fetcher)} tokens dans extended_tokens_daily.")
 
     strat = config.get("strategy", {})
     sell_threshold = strat.get("sell_threshold", 0.3)
     try: 
-        big_gain_pct = float(strat.get("big_gain_exception_pct", 10.0))
+        big_gain_pct = float(strat.get("big_gain_exception_pct", 3.0)) # Default 3.0 (3x)
     except ValueError:
-        logging.error(f"[DAILY UPDATE] Valeur invalide pour big_gain_exception_pct: {strat.get('big_gain_exception_pct')}. Utilisation de 10.0.")
-        big_gain_pct = 10.0
+        logging.error(f"[DAILY UPDATE] Valeur invalide pour big_gain_exception_pct: {strat.get('big_gain_exception_pct')}. Utilisation de 3.0.")
+        big_gain_pct = 3.0
     buy_threshold  = strat.get("buy_threshold", 0.5)
 
     MIN_VALUE_TO_SELL    = 5.0   
@@ -163,8 +164,8 @@ def daily_update_live(state, bexec):
         if process_df.stderr: logging.warning(f"[DAILY UPDATE] data_fetcher stderr:\n{process_df.stderr.strip()}")
     except subprocess.CalledProcessError as e:
         logging.error(f"[DAILY UPDATE] {os.path.basename(DATA_FETCHER_SCRIPT_PATH)} a échoué (code: {e.returncode}).")
-        if e.stdout: logging.error(f"[DAILY UPDATE] data_fetcher stdout de l'erreur:\n{e.stdout.strip()}")
-        if e.stderr: logging.error(f"[DAILY UPDATE] data_fetcher stderr de l'erreur:\n{e.stderr.strip()}")
+        if hasattr(e, 'stdout') and e.stdout: logging.error(f"[DAILY UPDATE] data_fetcher stdout de l'erreur:\n{e.stdout.strip()}")
+        if hasattr(e, 'stderr') and e.stderr: logging.error(f"[DAILY UPDATE] data_fetcher stderr de l'erreur:\n{e.stderr.strip()}")
         return
     except Exception as e:
         logging.error(f"[DAILY UPDATE] Exception lors de l'appel à {os.path.basename(DATA_FETCHER_SCRIPT_PATH)}: {e}", exc_info=True)
@@ -185,8 +186,8 @@ def daily_update_live(state, bexec):
         if process_ml.stderr: logging.warning(f"[DAILY UPDATE] ml_decision stderr:\n{process_ml.stderr.strip()}")
     except subprocess.CalledProcessError as e:
         logging.error(f"[DAILY UPDATE] {os.path.basename(ML_DECISION_SCRIPT_PATH)} a échoué (code: {e.returncode}).")
-        if e.stdout: logging.error(f"[DAILY UPDATE] ml_decision stdout de l'erreur:\n{e.stdout.strip()}")
-        if e.stderr: logging.error(f"[DAILY UPDATE] ml_decision stderr de l'erreur:\n{e.stderr.strip()}")
+        if hasattr(e, 'stdout') and e.stdout: logging.error(f"[DAILY UPDATE] ml_decision stdout de l'erreur:\n{e.stdout.strip()}")
+        if hasattr(e, 'stderr') and e.stderr: logging.error(f"[DAILY UPDATE] ml_decision stderr de l'erreur:\n{e.stderr.strip()}")
         return
     except Exception as e:
         logging.error(f"[DAILY UPDATE] Exception lors de l'appel à {os.path.basename(ML_DECISION_SCRIPT_PATH)}: {e}", exc_info=True)
@@ -320,13 +321,12 @@ def daily_update_live(state, bexec):
         logging.info(f"[DAILY BUY] Allocation de {usdc_to_allocate_total:.2f} USDC pour {num_buys_to_make} token(s).")
 
         for i, (sym, p_val) in enumerate(top3_buy_candidates, start=1):
-            # Recalculer usdc_per_buy à chaque itération basé sur le capital restant et les tokens restants
             remaining_tokens_to_buy = num_buys_to_make - i + 1
-            if usdc_to_allocate_total < 10 or remaining_tokens_to_buy == 0 : # Sécurité pour division par zéro et capital min
+            if usdc_to_allocate_total < 10 or remaining_tokens_to_buy == 0 : 
                 logging.info("[DAILY BUY] Reliquat USDC < 10 ou plus de tokens à acheter. Arrêt des achats.")
                 break
             
-            usdc_per_buy = usdc_to_allocate_total / remaining_tokens_to_buy # Diviser le capital restant
+            usdc_per_buy = usdc_to_allocate_total / remaining_tokens_to_buy 
             
             logging.info(f"[DAILY BUY EXEC] Tentative d'achat de {sym} avec ~{usdc_per_buy:.2f} USDC (Prob: {p_val:.2f}).")
             qty_bought, price_bought, cost_of_buy = bexec.buy(sym, usdc_per_buy)
@@ -373,8 +373,8 @@ def main():
     log_file_path = os.path.join(PROJECT_ROOT, log_file_name) 
 
     log_dir = os.path.dirname(log_file_path)
-    if log_dir and not os.path.exists(log_dir):
-        try: os.makedirs(log_dir)
+    if log_dir and not os.path.exists(log_dir): # S'assurer que le répertoire du log existe
+        try: os.makedirs(log_dir, exist_ok=True) # exist_ok=True pour ne pas échouer s'il existe déjà
         except OSError as e: print(f"Erreur création répertoire log {log_dir}: {e}")
 
     logging.basicConfig(
@@ -415,32 +415,26 @@ def main():
 
     logging.info(f"[MAIN] Boucle principale démarrée. Mise à jour quotidienne prévue à {DAILY_UPDATE_HOUR_UTC:02d}:{DAILY_UPDATE_MINUTE_UTC:02d} UTC.")
 
-    # Initialiser last_daily_update_ts si non présent dans state pour la première exécution de la nouvelle logique de reset
     if "last_daily_update_ts" not in state:
-        state["last_daily_update_ts"] = 0 # Pour permettre le premier daily update
+        state["last_daily_update_ts"] = 0 
         logging.info("[MAIN] 'last_daily_update_ts' initialisé dans l'état.")
+        save_state(state) # Sauvegarder l'état initialisé
 
     while True:
         try:
             now_utc = datetime.datetime.now(pytz.utc)
             
-            # Logique de réinitialisation du flag did_daily_update_today
-            # On réinitialise si on est un nouveau jour UTC ET que la dernière màj était la veille ou avant.
-            # Cela évite de réinitialiser si le bot redémarre le même jour après la màj.
             current_date_utc = now_utc.date()
             last_update_date_utc = None
-            if state.get("last_daily_update_ts"):
+            if state.get("last_daily_update_ts", 0) > 0: # S'assurer que le timestamp est valide
                 last_update_date_utc = datetime.datetime.fromtimestamp(state["last_daily_update_ts"], tz=pytz.utc).date()
 
             if state.get("did_daily_update_today", False):
                 if last_update_date_utc is None or current_date_utc > last_update_date_utc:
                     logging.info(f"[MAIN] Réinitialisation du flag 'did_daily_update_today' car nouveau jour UTC ({current_date_utc}) et dernière màj ({last_update_date_utc}).")
                     state["did_daily_update_today"] = False
-                    # Ne pas remettre last_daily_update_ts à 0 ici, il sert à marquer la date de la dernière màj effective.
                     save_state(state)
-                # else: le flag est True, et on est toujours le même jour que la dernière màj, donc on ne fait rien.
 
-            # Daily update live
             if (now_utc.hour == DAILY_UPDATE_HOUR_UTC and
                 now_utc.minute == DAILY_UPDATE_MINUTE_UTC and
                 not state.get("did_daily_update_today", False)):
@@ -448,7 +442,7 @@ def main():
                 logging.info(f"[MAIN] Déclenchement de daily_update_live (heure planifiée: {now_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}).")
                 daily_update_live(state, bexec)
                 state["did_daily_update_today"] = True
-                state["last_daily_update_ts"] = time.time() # Enregistre le timestamp de CETTE mise à jour
+                state["last_daily_update_ts"] = time.time() 
                 save_state(state)
                 logging.info("[MAIN] daily_update_live terminé et flag positionné.")
 
