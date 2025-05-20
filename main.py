@@ -42,7 +42,8 @@ CONFIG_TEMP_FILE_PATH = os.path.join(PROJECT_ROOT, "config_temp.yaml")
 # STATE_FILE_PATH est géré par positions_store.py
 DAILY_PROBABILITIES_CSV_PATH = os.path.join(PROJECT_ROOT, "daily_probabilities.csv")
 DAILY_INFERENCE_CSV_PATH = os.path.join(PROJECT_ROOT, "daily_inference_data.csv")
-# AUTO_SELECT_SCRIPT_PATH n'est plus utilisé pour subprocess
+# Chemin vers le script auto_select_tokens.py (utilisé comme fallback subprocess)
+AUTO_SELECT_SCRIPT_PATH = os.path.join(PROJECT_ROOT, "auto_select_tokens.py")
 DATA_FETCHER_SCRIPT_PATH = os.path.join(PROJECT_ROOT, "modules", "data_fetcher.py")
 ML_DECISION_SCRIPT_PATH = os.path.join(PROJECT_ROOT, "modules", "ml_decision.py")
 
@@ -91,36 +92,81 @@ def load_probabilities_csv(csv_path=DAILY_PROBABILITIES_CSV_PATH):
     except Exception as e: logger.error(f"Erreur lecture {csv_path}: {e}", exc_info=True); return {}
 
 def run_auto_select_and_get_tokens(binance_client_instance: Client, config_path_main: str, num_top_n: int):
+    """Appelle la sélection automatique de tokens et retourne la liste.
+
+    Si l'import direct ou l'appel de la fonction échoue, un fallback via
+    subprocess exécutant auto_select_tokens.py est tenté.
     """
-    Appelle la fonction de sélection de tokens et retourne la liste.
-    auto_select_tokens.py est aussi censé mettre à jour config.yaml.
-    """
-    logger.info(f"Appel de la fonction select_tokens_and_update_config_auto_func (de auto_select_tokens.py)...")
-    if not auto_select_module_imported or select_tokens_and_update_config_auto_func is None:
-        logger.error("Le module/fonction de sélection automatique de tokens n'a pas été importé correctement.")
-        return None # Échec clair
-        
-    selected_tokens = None
+
+    logger.info(
+        "Appel de la fonction select_tokens_and_update_config_auto_func (de auto_select_tokens.py)..."
+    )
+
+    if auto_select_module_imported and select_tokens_and_update_config_auto_func is not None:
+        try:
+            selected_tokens = select_tokens_and_update_config_auto_func(
+                binance_client_instance=binance_client_instance,
+                config_path=AUTO_SELECT_CONFIG_PATH_FROM_MODULE,
+                num_top_tokens=num_top_n,
+            )
+            if selected_tokens is not None:
+                logger.info(
+                    f"{len(selected_tokens)} tokens retournés par la fonction de sélection automatique."
+                )
+                return selected_tokens
+            logger.error(
+                "La fonction de sélection automatique a retourné None (échec interne probable)."
+            )
+        except Exception as e:
+            logger.error(
+                f"Exception inattendue lors de l'appel à la fonction de sélection de tokens: {e}",
+                exc_info=True,
+            )
+
+    logger.info("Tentative fallback en exécutant auto_select_tokens.py via subprocess...")
+    python_executable = sys.executable
     try:
-        # La fonction importée select_and_write_tokens s'occupe de la logique et de la mise à jour de config.yaml
-        # Elle prend le client Binance, le chemin vers config.yaml, et le nombre de tokens.
-        # Utiliser AUTO_SELECT_CONFIG_PATH_FROM_MODULE pour être sûr que c'est le même config.yaml
-        # que celui que auto_select_tokens.py utiliserait s'il était lancé seul.
-        selected_tokens = select_tokens_and_update_config_auto_func(
-            binance_client_instance=binance_client_instance,
-            config_path=AUTO_SELECT_CONFIG_PATH_FROM_MODULE, 
-            num_top_tokens=num_top_n
+        process = subprocess.run(
+            [python_executable, AUTO_SELECT_SCRIPT_PATH],
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+            encoding="utf-8",
+            errors="ignore",
         )
-        
-        if selected_tokens is not None: # Peut être une liste vide
-            logger.info(f"{len(selected_tokens)} tokens retournés par la fonction de sélection automatique.")
-        else: # La fonction a explicitement retourné None, indiquant un échec
-            logger.error("La fonction de sélection automatique a retourné None (échec interne probable).")
-        return selected_tokens # Retourne la liste (peut être vide) ou None
-        
-    except Exception as e:
-        logger.error(f"Exception inattendue lors de l'appel à la fonction de sélection de tokens: {e}", exc_info=True)
-        return None # Échec majeur
+        if process.stdout:
+            for line in process.stdout.splitlines():
+                if line.startswith("JSON_OUTPUT:"):
+                    json_part = line.split("JSON_OUTPUT:", 1)[1].strip()
+                    try:
+                        data = json.loads(json_part)
+                        tokens = data.get("tokens", [])
+                        logger.info(
+                            f"{len(tokens)} tokens récupérés via subprocess auto_select_tokens.py."
+                        )
+                        return tokens
+                    except json.JSONDecodeError as e_json:
+                        logger.error(
+                            f"Échec décodage JSON_OUTPUT de auto_select_tokens.py: {e_json}"
+                        )
+        if process.stderr:
+            logger.warning(f"auto_select_tokens.py stderr:\n{process.stderr.strip()}")
+    except subprocess.CalledProcessError as e_sub:
+        logger.error(
+            f"auto_select_tokens.py via subprocess a échoué (code: {e_sub.returncode})."
+        )
+        if getattr(e_sub, "stdout", None):
+            logger.error(f"stdout:\n{e_sub.stdout.strip()}")
+        if getattr(e_sub, "stderr", None):
+            logger.error(f"stderr:\n{e_sub.stderr.strip()}")
+    except Exception as e_sub_gen:
+        logger.error(
+            f"Exception dans le fallback auto_select_tokens.py: {e_sub_gen}",
+            exc_info=True,
+        )
+
+    return None
 
 
 def daily_update_live(state, bexec):
