@@ -409,9 +409,25 @@ def daily_update_live(state, bexec):
         )
         return
 
-    prob_map = load_probabilities_csv()
+    # ------------------------------------------------------------------
+    # ❶ Chargement brut puis NORMALISATION des clés de probabilités
+    # ------------------------------------------------------------------
+    prob_raw = load_probabilities_csv()
+    
+    prob_map = {}
+    for k, v in prob_raw.items():
+        if k is None:
+            continue
+        k_up = str(k).strip().upper()           # ex. « SOLUSDC »
+        prob_map[k_up] = v                      # garde la forme d’origine
+        # Ajoute la forme « ticker nu » si la clé se termine par un stable-coin
+        for suffix in ("USDC", "USDT", "USD"):
+            if k_up.endswith(suffix):
+                prob_map[k_up[:-len(suffix)]] = v   # ex. « SOL »
+                break
+    
     logger.info(
-        f"Probabilités chargées pour {len(prob_map)} tokens. Liste de fetcher: {len(final_token_list_for_fetcher)} tokens."
+        f"Probabilités normalisées : {len(prob_map)} clés (brutes ={len(prob_raw)})"
     )
 
     # --- SELL & BUY (code d'origine inchangé sauf pour buy_candidates_source_list) ---- #
