@@ -555,6 +555,7 @@ def daily_update_live(state, bexec):
         f"Début de la recherche de candidats pour ACHAT parmi {len(buy_candidates_source_list)} tokens."
     )
     for sym in buy_candidates_source_list:
+        sym = sym_raw.upper()
         p = prob_map.get(sym, None)
         logger.debug(f"Vérification ACHAT pour {sym}: Prob={p if p is not None else 'N/A'}")
 
