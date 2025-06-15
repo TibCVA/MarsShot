@@ -612,6 +612,10 @@ def daily_update_live(state, bexec):
                 )
                 break
 
+            logger.info(f"[DEBUG] Solde free USDC détecté : {new_USDC_balance:.2f}")
+            logger.info(f"[DEBUG] Candidats après filtre probas : {buy_candidates}")
+            logger.info(f"[DEBUG] Allocation par token : {usdc_per_buy:.2f} USDC")
+            
             logger.info(
                 f"Tentative d'ACHAT de {sym} avec ~{usdc_per_buy:.2f} USDC (Prob: {p_val:.2f})."
             )
