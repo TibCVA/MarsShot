@@ -183,31 +183,34 @@ def run_auto_select_once_per_day(state_unused):
         )
         return None
 
-# +++ DÉBUT DE L'AJOUT 2 : FONCTION DE SÉLECTION DES PERFORMEURS +++
+# +++ DÉBUT DE LA CORRECTION : AJOUT DE PAUSES API +++
 def select_top_performers_from_list(client, token_list, top_n=60):
     """
-    Calcule le score de performance (0.8*perf_7j + 0.2*perf_24h) pour chaque token
-    d'une liste donnée et renvoie les 'top_n' meilleurs.
-    Cette fonction est robuste et ne fera pas planter le script en cas d'erreur API.
+    Calcule le score de performance et renvoie les 'top_n' meilleurs.
+    Inclut des pauses pour éviter les rate limits de l'API.
     """
     logger.info(f"Début du calcul de performance sur {len(token_list)} tokens pour sélectionner le top {top_n}.")
     scored_tokens = []
-    for token in token_list:
+    # Itération avec un index pour ajouter une pause
+    for i, token in enumerate(token_list):
+        # Ajout d'une pause tous les 20 tokens pour ne pas surcharger l'API Binance
+        if i > 0 and i % 20 == 0:
+            logger.debug(f"Pause de 1 seconde après avoir traité {i} tokens...")
+            time.sleep(1)
+
         pair_symbol = f"{token.upper()}USDC"
         try:
-            # On utilise les fonctions importées de auto_select_tokens.py
             p24 = get_24h_change(client, pair_symbol)
             p7 = get_kline_change(client, pair_symbol, days=7)
-            # p30 n'est pas utilisé dans cette logique, on met 0.0
             score = compute_token_score(p24, p7, 0.0)
-            if score > -1: # On ne garde que les tokens avec un score valide
-                scored_tokens.append({"symbol": token, "score": score})
-                logger.debug(f"Token {token}: p7d={p7:.2%}, p24h={p24:.2%}, Score={score:.4f}")
+            
+            scored_tokens.append({"symbol": token, "score": score})
+            logger.debug(f"Token {token}: p7d={p7:.2%}, p24h={p24:.2%}, Score={score:.4f}")
 
         except Exception as e:
-            logger.warning(f"Impossible de calculer le score pour {token} (paire: {pair_symbol}). Erreur: {e}. Token ignoré.")
-            # On assigne un score très bas pour qu'il soit ignoré
-            scored_tokens.append({"symbol": token, "score": -999.0})
+            # Si une erreur 'Failed to fetch' ou 'Invalid symbol' se produit, elle sera attrapée ici.
+            logger.warning(f"Impossible de calculer le score pour {token} (paire: {pair_symbol}). Erreur: {e}. Token ignoré du classement.")
+            # On n'ajoute pas le token s'il est en erreur, il ne sera pas classé.
     
     # Trier les tokens par score, du plus élevé au plus bas
     scored_tokens.sort(key=lambda x: x["score"], reverse=True)
@@ -219,7 +222,7 @@ def select_top_performers_from_list(client, token_list, top_n=60):
     logger.info(f"Top 5 performers : {top_performers[:5]}")
     
     return top_performers
-# +++ FIN DE L'AJOUT 2 +++
+# +++ FIN DE LA CORRECTION +++
 
 
 def daily_update_live(state, bexec):
@@ -278,7 +281,9 @@ def daily_update_live(state, bexec):
     if not final_token_list_for_fetcher:
         logger.warning("La liste finale de tokens pour data_fetcher est vide. Arrêt du daily_update.")
         try:
-            pd.DataFrame().to_csv(DAILY_INFERENCE_CSV_PATH, index=False) # Assurez-vous que pandas est importé si vous l'utilisez ici
+            # L'import de pandas est déjà fait dans load_probabilities_csv, pas besoin de le refaire
+            import pandas as pd 
+            pd.DataFrame().to_csv(DAILY_INFERENCE_CSV_PATH, index=False)
             logger.info(f"Fichier {os.path.basename(DAILY_INFERENCE_CSV_PATH)} vide créé.")
         except Exception as e_csv:
             logger.error(f"Erreur lors de la création du fichier CSV vide {os.path.basename(DAILY_INFERENCE_CSV_PATH)}: {e_csv}")
@@ -290,6 +295,10 @@ def daily_update_live(state, bexec):
     with open(CONFIG_TEMP_FILE_PATH, "w", encoding="utf-8") as fw: 
         yaml.safe_dump(config_for_temp, fw, sort_keys=False)
     logger.info(f"{os.path.basename(CONFIG_TEMP_FILE_PATH)} créé avec {len(final_token_list_for_fetcher)} tokens dans extended_tokens_daily.")
+
+    # --- Le reste de la fonction daily_update_live (stratégie, data_fetcher, ml_decision, SELL, BUY) ---
+    # --- est identique à la version précédente que je vous ai fournie. ---
+    # --- Assurez-vous d'utiliser cette version avec les appels subprocess robustes et logging. ---
 
     strat = config.get("strategy", {})
     sell_threshold = strat.get("sell_threshold", 0.3)
