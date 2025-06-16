@@ -115,15 +115,30 @@ class TradeExecutor:
         """
         pair = asset.upper() + "USDC"
         try:
+            # +++ DÉBUT DES AJOUTS DE LOGS DE DEBUG +++
+            logging.info(f"[BUY_DEBUG] Début achat pour {pair} avec {USDC_amount:.2f} USDC.")
+            
             px_info = self.client.get_symbol_ticker(symbol=pair)
             px = float(px_info["price"])
+            logging.info(f"[BUY_DEBUG] Prix actuel de {pair}: {px}")
 
-            raw_qty = USDC_amount / px
-            adj_qty = self.adjust_quantity_lot_size(pair, raw_qty)
-            if adj_qty <= 0:
-                logging.warning(f"[BUY] {asset}, qty={adj_qty} => trop faible => skip")
+            if px <= 0:
+                logging.error(f"[BUY ERROR] Le prix de {pair} est nul ou négatif. Achat annulé.")
                 return (0.0, 0.0, 0.0)
 
+            raw_qty = USDC_amount / px
+            logging.info(f"[BUY_DEBUG] Quantité brute calculée: {raw_qty}")
+            
+            adj_qty = self.adjust_quantity_lot_size(pair, raw_qty)
+            logging.info(f"[BUY_DEBUG] Quantité ajustée: {adj_qty}")
+
+            if adj_qty <= 0:
+                logging.warning(f"[BUY] {asset}, qty ajustée ({adj_qty}) trop faible après contraintes (LOT_SIZE, MIN_NOTIONAL). Achat skippé.")
+                return (0.0, 0.0, 0.0)
+
+            logging.info(f"[BUY] Passage de l'ordre MARKET pour {adj_qty} {asset}.")
+            # +++ FIN DES AJOUTS DE LOGS DE DEBUG +++
+            
             order = self.client.create_order(
                 symbol= pair,
                 side= "BUY",
@@ -145,7 +160,8 @@ class TradeExecutor:
             return (fill_qty, avg_px, fill_sum)
 
         except Exception as e:
-            logging.error(f"[BUY ERROR] {asset} => {e}")
+            # +++ MODIFICATION CRUCIALE : LOG DE L'EXCEPTION DÉTAILLÉE +++
+            logging.error(f"[BUY ERROR] Exception pour {asset}: {e}", exc_info=True)
             return (0.0, 0.0, 0.0)
 
     def adjust_quantity_lot_size(self, symbol, raw_qty):
