@@ -15,19 +15,13 @@ from modules.trade_executor import TradeExecutor
 from modules.positions_store import load_state, save_state
 from modules.risk_manager import intraday_check_real
 
-# +++ DÉBUT DE L'AJOUT 1 : IMPORTS POUR LE FILTRAGE +++
-# Ajout pour la logique de filtrage des 60 meilleurs performeurs
-# On importe les fonctions directement depuis le script existant pour réutiliser le code.
+# --- Imports pour le filtrage (inchangé) ---
 try:
     from auto_select_tokens import get_24h_change, get_kline_change, compute_token_score
-    # Le logger est déjà défini plus bas, on l'utilisera là-bas.
 except ImportError:
-    # Si l'import échoue, on définit des fonctions "vides" pour éviter un crash
-    # et on logguera une erreur critique plus tard. C'est une mesure de sécurité.
     def get_24h_change(*args, **kwargs): return 0.0
     def get_kline_change(*args, **kwargs): return 0.0
     def compute_token_score(*args, **kwargs): return -1.0
-# +++ FIN DE L'AJOUT 1 +++
 
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -39,10 +33,30 @@ AUTO_SELECT_SCRIPT_PATH = os.path.join(PROJECT_ROOT, "auto_select_tokens.py")
 DATA_FETCHER_SCRIPT_PATH = os.path.join(PROJECT_ROOT, "modules", "data_fetcher.py")
 ML_DECISION_SCRIPT_PATH = os.path.join(PROJECT_ROOT, "modules", "ml_decision.py")
 
+# +++ AJOUT 1 : CHEMIN VERS LE NOUVEAU FICHIER DE LOG DÉDIÉ +++
+DAILY_UPDATE_LOG_FILE = os.path.join(PROJECT_ROOT, "daily_update.log")
+
+# Logger global (pour les messages généraux du bot)
 logger = logging.getLogger(__name__)
+# Logger dédié pour le cycle de mise à jour quotidienne
+daily_logger = logging.getLogger('daily_update')
+
+def setup_daily_logger():
+    """Configure le logger dédié pour écraser le fichier à chaque cycle."""
+    # Retirer les anciens handlers pour éviter les logs dupliqués
+    for handler in daily_logger.handlers[:]:
+        daily_logger.removeHandler(handler)
+    
+    # Configurer le nouveau handler pour écrire en mode 'w' (écrasement)
+    file_handler = logging.FileHandler(DAILY_UPDATE_LOG_FILE, mode='w', encoding='utf-8')
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] - %(message)s")
+    file_handler.setFormatter(formatter)
+    
+    daily_logger.addHandler(file_handler)
+    daily_logger.setLevel(logging.INFO)
+    daily_logger.propagate = False # Empêche les logs de remonter au logger racine
 
 def load_probabilities_csv(csv_path=DAILY_PROBABILITIES_CSV_PATH):
-    # ... (inchangé par rapport à votre dernière version) ...
     import pandas as pd
     if not os.path.exists(csv_path):
         logger.warning(f"Fichier de probabilités {csv_path} introuvable => retour de {{}}")
@@ -75,26 +89,17 @@ def run_auto_select_once_per_day(state_unused):
     d'échec, un fallback via ``subprocess`` est effectué. ``None`` est renvoyé si
     aucune liste n'a pu être obtenue.
     """
-
     logger.info(
         f"Tentative d'exécution de {AUTO_SELECT_SCRIPT_PATH} pour la sélection automatique des tokens."
     )
-
     selected_tokens = None
-
-    # --------------------------------------------------------------
-    # 1) Tentative via import direct du module auto_select_tokens
-    # --------------------------------------------------------------
     try:
         import auto_select_tokens as ast
-
         with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f_cfg:
             cfg = yaml.safe_load(f_cfg)
-
         api_key = cfg.get("binance_api", {}).get("api_key")
         api_secret = cfg.get("binance_api", {}).get("api_secret")
         top_n = cfg.get("strategy", {}).get("auto_select_top_n", 60)
-
         if api_key and api_secret:
             client = ast.Client(api_key, api_secret)
             client.ping()
@@ -114,17 +119,11 @@ def run_auto_select_once_per_day(state_unused):
             exc_info=True,
         )
         selected_tokens = None
-
     if selected_tokens:
         return selected_tokens
-
-    # --------------------------------------------------------------
-    # 2) Fallback : exécution du script via subprocess
-    # --------------------------------------------------------------
     if not os.path.exists(AUTO_SELECT_SCRIPT_PATH):
         logger.error(f"Script {AUTO_SELECT_SCRIPT_PATH} introuvable.")
         return None
-
     try:
         python_executable = sys.executable
         process = subprocess.run(
@@ -133,12 +132,10 @@ def run_auto_select_once_per_day(state_unused):
             text=True,
             cwd=PROJECT_ROOT,
         )
-
         if process.stderr:
             logger.info(
                 f"Stderr (logs) de {os.path.basename(AUTO_SELECT_SCRIPT_PATH)}:\n{process.stderr.strip()}"
             )
-
         if process.stdout:
             logger.info(
                 f"Stdout de {os.path.basename(AUTO_SELECT_SCRIPT_PATH)}:\n{process.stdout.strip()}"
@@ -166,14 +163,11 @@ def run_auto_select_once_per_day(state_unused):
                         logger.error(
                             f"Erreur lors du traitement du payload JSON de auto_select_tokens.py: {e_payload}."
                         )
-
         if process.returncode != 0:
             logger.error(
                 f"{os.path.basename(AUTO_SELECT_SCRIPT_PATH)} s'est terminé avec le code d'erreur {process.returncode}."
             )
-
         return selected_tokens
-
     except Exception as e:
         logger.error(
             "Exception inattendue lors de l'exécution de %s: %s",
@@ -183,85 +177,65 @@ def run_auto_select_once_per_day(state_unused):
         )
         return None
 
-# +++ DÉBUT DE LA CORRECTION : AJOUT DE PAUSES API +++
+
 def select_top_performers_from_list(client, token_list, top_n=60):
     """
     Calcule le score de performance et renvoie les 'top_n' meilleurs.
     Inclut des pauses pour éviter les rate limits de l'API.
     """
-    logger.info(f"Début du calcul de performance sur {len(token_list)} tokens pour sélectionner le top {top_n}.")
+    daily_logger.info(f"Début du calcul de performance sur {len(token_list)} tokens pour sélectionner le top {top_n}.")
     scored_tokens = []
-    # Itération avec un index pour ajouter une pause
     for i, token in enumerate(token_list):
-        # Ajout d'une pause tous les 20 tokens pour ne pas surcharger l'API Binance
         if i > 0 and i % 20 == 0:
-            logger.debug(f"Pause de 1 seconde après avoir traité {i} tokens...")
+            daily_logger.debug(f"Pause de 1 seconde après avoir traité {i} tokens...")
             time.sleep(1)
-
         pair_symbol = f"{token.upper()}USDC"
         try:
             p24 = get_24h_change(client, pair_symbol)
             p7 = get_kline_change(client, pair_symbol, days=7)
             score = compute_token_score(p24, p7, 0.0)
-            
             scored_tokens.append({"symbol": token, "score": score})
-            logger.debug(f"Token {token}: p7d={p7:.2%}, p24h={p24:.2%}, Score={score:.4f}")
-
+            daily_logger.debug(f"Token {token}: p7d={p7:.2%}, p24h={p24:.2%}, Score={score:.4f}")
         except Exception as e:
-            # Si une erreur 'Failed to fetch' ou 'Invalid symbol' se produit, elle sera attrapée ici.
-            logger.warning(f"Impossible de calculer le score pour {token} (paire: {pair_symbol}). Erreur: {e}. Token ignoré du classement.")
-            # On n'ajoute pas le token s'il est en erreur, il ne sera pas classé.
+            daily_logger.warning(f"Impossible de calculer le score pour {token} (paire: {pair_symbol}). Erreur: {e}. Token ignoré du classement.")
     
-    # Trier les tokens par score, du plus élevé au plus bas
     scored_tokens.sort(key=lambda x: x["score"], reverse=True)
-    
-    # Extraire les symboles des 'top_n' meilleurs tokens
     top_performers = [item["symbol"] for item in scored_tokens[:top_n]]
     
-    logger.info(f"Sélection terminée. {len(top_performers)} tokens retenus comme meilleurs performeurs.")
-    logger.info(f"Top 5 performers : {top_performers[:5]}")
+    daily_logger.info(f"Calcul de performance terminé. {len(top_performers)} tokens retenus.")
+    top_5_with_scores = [(item['symbol'], round(item.get('score', 0), 4)) for item in scored_tokens[:5]]
+    daily_logger.info(f"Top 5 performers (score): {top_5_with_scores}")
     
     return top_performers
-# +++ FIN DE LA CORRECTION +++
 
 
 def daily_update_live(state, bexec):
-    logger.info("Début de daily_update_live.")
-
-    logger.info("Appel de run_auto_select_once_per_day...")
-    # Récupérer la liste des tokens directement depuis la fonction
+    # +++ SETUP DU LOGGER DÉDIÉ AU DÉBUT DU CYCLE +++
+    setup_daily_logger()
+    daily_logger.info("========== DÉBUT DU CYCLE DAILY UPDATE LIVE ==========")
+    
+    daily_logger.info("Étape 1: Sélection des tokens via auto_select_tokens.py...")
     auto_selected_tokens_from_script = run_auto_select_once_per_day(state) 
-
-    # Attendre un peu pour que les écritures sur config.yaml par auto_select_tokens.py (s'il y en a) se terminent.
-    if auto_selected_tokens_from_script is not None: # Si le script a au moins tenté de s'exécuter
-        logger.info("Attente de 1s pour la synchronisation disque de config.yaml.")
+    daily_logger.info(f"auto_select_tokens.py a retourné {len(auto_selected_tokens_from_script) if auto_selected_tokens_from_script else 0} token(s).")
+    
+    if auto_selected_tokens_from_script is not None:
         time.sleep(1)
 
     if not os.path.exists(CONFIG_FILE_PATH):
-        logger.error(f"{CONFIG_FILE_PATH} introuvable. Arrêt de daily_update_live.")
+        daily_logger.error(f"{CONFIG_FILE_PATH} introuvable. Arrêt.")
         return
-
     try:
-        logger.info(f"Lecture de {CONFIG_FILE_PATH}...")
         with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
-        # Log pour vérifier si la mise à jour de config.yaml par auto_select_tokens.py est visible
-        cfg_extended_tokens = config.get('extended_tokens_daily', 'Non présente ou vide')
-        logger.info(f"'extended_tokens_daily' lu depuis {CONFIG_FILE_PATH}: {str(cfg_extended_tokens)[:200]}...")
     except Exception as e:
-        logger.error(f"Erreur lors de la lecture de {CONFIG_FILE_PATH}: {e}", exc_info=True)
+        daily_logger.error(f"Erreur lecture {CONFIG_FILE_PATH}: {e}", exc_info=True)
         return
 
-    # Utiliser la liste retournée par le script en priorité.
-    # Si elle est None (échec majeur du script), essayer de lire depuis config.yaml comme fallback.
     if auto_selected_tokens_from_script is not None:
         auto_selected_tokens = auto_selected_tokens_from_script
-        logger.info(f"Utilisation de la liste de tokens retournée par auto_select_tokens.py ({len(auto_selected_tokens)} tokens).")
     else:
-        logger.warning("auto_select_tokens.py n'a pas retourné de liste de tokens. Tentative de lecture depuis config.yaml (extended_tokens_daily).")
         auto_selected_tokens = config.get("extended_tokens_daily", [])
         if not isinstance(auto_selected_tokens, list):
-            logger.warning(f"'extended_tokens_daily' dans config (fallback) n'est pas une liste. Utilisation d'une liste vide.")
             auto_selected_tokens = []
     
     manual_tokens = config.get("tokens_daily", [])
@@ -273,20 +247,15 @@ def daily_update_live(state, bexec):
         set(auto_selected_tokens).union(set(manual_tokens)).union(set(system_positions))
     ))
 
-    logger.info(f"Tokens from auto_select_script (direct return or fallback from config): {len(auto_selected_tokens)} - Aperçu: {str(auto_selected_tokens[:10]) if auto_selected_tokens else '[]'}")
-    logger.info(f"Tokens from manual list (config:tokens_daily): {manual_tokens}")
-    logger.info(f"Tokens from current positions (state:positions_meta): {system_positions}")
-    logger.info(f"Liste finale combinée pour data_fetcher ({len(final_token_list_for_fetcher)} tokens) - Aperçu: {str(final_token_list_for_fetcher[:10]) if final_token_list_for_fetcher else '[]'}")
-
+    daily_logger.info(f"Liste de tokens manuels (config): {len(manual_tokens)}")
+    daily_logger.info(f"Liste de positions détenues (state): {len(system_positions)} - {system_positions}")
+    daily_logger.info(f"Liste finale pour la collecte de données : {len(final_token_list_for_fetcher)} tokens.")
+    
     if not final_token_list_for_fetcher:
-        logger.warning("La liste finale de tokens pour data_fetcher est vide. Arrêt du daily_update.")
-        try:
-            # L'import de pandas est déjà fait dans load_probabilities_csv, pas besoin de le refaire
-            import pandas as pd 
-            pd.DataFrame().to_csv(DAILY_INFERENCE_CSV_PATH, index=False)
-            logger.info(f"Fichier {os.path.basename(DAILY_INFERENCE_CSV_PATH)} vide créé.")
-        except Exception as e_csv:
-            logger.error(f"Erreur lors de la création du fichier CSV vide {os.path.basename(DAILY_INFERENCE_CSV_PATH)}: {e_csv}")
+        daily_logger.warning("Liste de tokens pour data_fetcher est vide. Arrêt du cycle.")
+        # L'import de pandas est déjà fait dans load_probabilities_csv, pas besoin de le refaire
+        import pandas as pd
+        pd.DataFrame().to_csv(DAILY_INFERENCE_CSV_PATH, index=False)
         return
 
     config_for_temp = config.copy() 
@@ -294,115 +263,73 @@ def daily_update_live(state, bexec):
 
     with open(CONFIG_TEMP_FILE_PATH, "w", encoding="utf-8") as fw: 
         yaml.safe_dump(config_for_temp, fw, sort_keys=False)
-    logger.info(f"{os.path.basename(CONFIG_TEMP_FILE_PATH)} créé avec {len(final_token_list_for_fetcher)} tokens dans extended_tokens_daily.")
-
-    # --- Le reste de la fonction daily_update_live (stratégie, data_fetcher, ml_decision, SELL, BUY) ---
-    # --- est identique à la version précédente que je vous ai fournie. ---
-    # --- Assurez-vous d'utiliser cette version avec les appels subprocess robustes et logging. ---
-
-    strat = config.get("strategy", {})
-    sell_threshold = strat.get("sell_threshold", 0.3)
-    try: 
-        big_gain_pct = float(strat.get("big_gain_exception_pct", 3.0)) 
-    except ValueError:
-        logger.error(f"Valeur invalide pour big_gain_exception_pct: {strat.get('big_gain_exception_pct')}. Utilisation de 3.0.")
-        big_gain_pct = 3.0
-    buy_threshold  = strat.get("buy_threshold", 0.5)
-
-    MIN_VALUE_TO_SELL    = 5.0   
-    MAX_VALUE_TO_SKIP_BUY = 20.0
-
+    
+    daily_logger.info("Étape 2: Lancement de data_fetcher.py...")
     python_executable = sys.executable
     try:
-        logger.info(f"Exécution de {os.path.basename(DATA_FETCHER_SCRIPT_PATH)} avec {CONFIG_TEMP_FILE_PATH}")
         process_df = subprocess.run(
             [python_executable, DATA_FETCHER_SCRIPT_PATH, "--config", CONFIG_TEMP_FILE_PATH],
             check=True, capture_output=True, text=True, cwd=PROJECT_ROOT
         )
-        logger.info(f"{os.path.basename(DATA_FETCHER_SCRIPT_PATH)} exécuté avec succès.")
-        if process_df.stdout: logger.info(f"data_fetcher stdout:\n{process_df.stdout.strip()}")
-        if process_df.stderr: logger.warning(f"data_fetcher stderr:\n{process_df.stderr.strip()}")
+        daily_logger.info("data_fetcher.py terminé avec succès.")
+        if process_df.stderr: daily_logger.warning(f"data_fetcher.py stderr: {process_df.stderr.strip()}")
     except subprocess.CalledProcessError as e:
-        logger.error(f"{os.path.basename(DATA_FETCHER_SCRIPT_PATH)} a échoué (code: {e.returncode}).")
-        if hasattr(e, 'stdout') and e.stdout: logger.error(f"data_fetcher stdout de l'erreur:\n{e.stdout.strip()}")
-        if hasattr(e, 'stderr') and e.stderr: logger.error(f"data_fetcher stderr de l'erreur:\n{e.stderr.strip()}")
+        daily_logger.error(f"data_fetcher.py a échoué. Stderr: {e.stderr}")
         return
-    except Exception as e:
-        logger.error(f"Exception lors de l'appel à {os.path.basename(DATA_FETCHER_SCRIPT_PATH)}: {e}", exc_info=True)
-        return
-
-    if (not os.path.exists(DAILY_INFERENCE_CSV_PATH) 
-        or os.path.getsize(DAILY_INFERENCE_CSV_PATH) < 10):
-        logger.warning(
-            f"{os.path.basename(DAILY_INFERENCE_CSV_PATH)} introuvable ou vide après data_fetcher => skip ml_decision."
-        )
-        return
-
+    
+    daily_logger.info("Étape 3: Lancement de ml_decision.py...")
     try:
-        logger.info(f"Exécution de {os.path.basename(ML_DECISION_SCRIPT_PATH)}")
         process_ml = subprocess.run([python_executable, ML_DECISION_SCRIPT_PATH], 
                                     check=True, capture_output=True, text=True, cwd=PROJECT_ROOT)
-        logger.info(f"{os.path.basename(ML_DECISION_SCRIPT_PATH)} exécuté avec succès.")
-        if process_ml.stdout: logger.info(f"ml_decision stdout:\n{process_ml.stdout.strip()}")
-        if process_ml.stderr: logger.warning(f"ml_decision stderr:\n{process_ml.stderr.strip()}")
+        daily_logger.info("ml_decision.py terminé avec succès.")
+        if process_ml.stderr: daily_logger.warning(f"ml_decision.py stderr: {process_ml.stderr.strip()}")
     except subprocess.CalledProcessError as e:
-        logger.error(f"{os.path.basename(ML_DECISION_SCRIPT_PATH)} a échoué (code: {e.returncode}).")
-        if hasattr(e, 'stdout') and e.stdout: logger.error(f"ml_decision stdout de l'erreur:\n{e.stdout.strip()}")
-        if hasattr(e, 'stderr') and e.stderr: logger.error(f"ml_decision stderr de l'erreur:\n{e.stderr.strip()}")
+        daily_logger.error(f"ml_decision.py a échoué. Stderr: {e.stderr}")
         return
-    except Exception as e:
-        logger.error(f"Exception lors de l'appel à {os.path.basename(ML_DECISION_SCRIPT_PATH)}: {e}", exc_info=True)
-        return
-
+        
     prob_map = load_probabilities_csv() 
-    logger.info(f"Probabilités chargées pour {len(prob_map)} tokens. Liste de fetcher: {len(final_token_list_for_fetcher)} tokens.")
-
+    daily_logger.info(f"{len(prob_map)} probabilités chargées.")
+    
+    daily_logger.info("Étape 4: Phase de VENTE...")
     try:
         account_info = bexec.client.get_account()
+        balances = account_info.get("balances", [])
     except Exception as e:
-        logger.error(f"get_account a échoué: {e}", exc_info=True)
+        daily_logger.error(f"get_account a échoué: {e}")
         return
-
-    balances = account_info.get("balances", [])
+    
     holdings = {}
     USDC_balance = 0.0
     for b in balances:
         asset = b["asset"]
-        try:
-            qty = float(b.get("free", 0.0)) + float(b.get("locked", 0.0))
-        except ValueError:
-            logger.warning(f"Impossible de parser free/locked pour {asset}. Ignoré.")
-            continue
-        if asset.upper() == "USDC":
-            USDC_balance = qty
-        elif qty > 0:
-            holdings[asset] = qty
-    logger.info(f"Holdings actuels: {holdings}, Solde USDC: {USDC_balance:.2f}")
+        qty = float(b.get("free", 0.0)) + float(b.get("locked", 0.0))
+        if qty > 0:
+            if asset.upper() == "USDC":
+                USDC_balance = qty
+            else:
+                holdings[asset] = qty
+    daily_logger.info(f"Positions actuelles pour vérification de vente: {list(holdings.keys())}")
+
+    strat = config.get("strategy", {})
+    sell_threshold = strat.get("sell_threshold", 0.3)
+    big_gain_pct = float(strat.get("big_gain_exception_pct", 3.0))
+    buy_threshold  = strat.get("buy_threshold", 0.5)
+    MIN_VALUE_TO_SELL    = 5.0   
+    MAX_VALUE_TO_SKIP_BUY = 20.0
 
     assets_sold_this_cycle = []
     for asset, real_qty in list(holdings.items()): 
-        if asset.upper() in ["USDC", "BTC", "FDUSD"]:
-            logger.debug(f"Skip vente pour stable/core: {asset}")
+        if asset.upper() in ["BTC", "FDUSD"]:
             continue
-        
         current_px = bexec.get_symbol_price(asset)
-        if current_px <= 0:
-            logger.warning(f"Prix invalide ou nul ({current_px}) pour {asset} lors de la vérification de vente.")
-            continue
-
+        if current_px <= 0: continue
         val_in_usd = current_px * real_qty
         prob = prob_map.get(asset, None)
-        
-        logger.info(f"Vérification VENTE pour {asset}: Val={val_in_usd:.2f}, Qty={real_qty}, Px={current_px:.4f}, Prob={prob if prob is not None else 'N/A'}")
-
-        if prob is None:
-            logger.info(f"Skip vente {asset}: probabilité non trouvée.")
-            continue
-            
+        daily_logger.info(f"Vérification VENTE pour {asset}: Val={val_in_usd:.2f}, Px={current_px:.4f}, Prob={prob if prob is not None else 'N/A'}")
+        if prob is None: continue
         if val_in_usd >= MIN_VALUE_TO_SELL and prob < sell_threshold:
             meta = state.get("positions_meta", {}).get(asset, {})
             entry_px = meta.get("entry_px", 0.0)
-            
             perform_sell = True
             if entry_px > 0:
                 ratio = current_px / entry_px
@@ -411,127 +338,99 @@ def daily_update_live(state, bexec):
                     if not did_skip:
                         meta["did_skip_sell_once"] = True
                         state.setdefault("positions_meta", {})[asset] = meta
-                        logger.info(f"SKIP VENTE (BIG GAIN EXCEPTION) pour {asset}: ratio={ratio:.2f} >= {big_gain_pct:.2f}. Marqué pour ne plus skipper.")
+                        daily_logger.info(f"SKIP VENTE (BIG GAIN) pour {asset}: ratio={ratio:.2f}.")
                         perform_sell = False
                     else:
-                        logger.info(f"VENTE AUTORISÉE (BIG GAIN EXCEPTION DÉJÀ UTILISÉE) pour {asset}: ratio={ratio:.2f}.")
+                        daily_logger.info(f"VENTE AUTORISÉE (BIG GAIN DÉJÀ UTILISÉE) pour {asset}.")
             if perform_sell:
-                logger.info(f"Condition de VENTE REMPLIE pour {asset} (Prob: {prob:.2f} < {sell_threshold}, Val: {val_in_usd:.2f} >= {MIN_VALUE_TO_SELL}). Vente en cours...")
+                daily_logger.info(f"ORDRE DE VENTE: Déclenchement pour {asset} (Prob: {prob:.2f} < {sell_threshold})")
                 sold_val = bexec.sell_all(asset, real_qty)
-                logger.info(f"VENTE LIVE {asset}: vendu pour ~{sold_val:.2f} USDC.")
+                daily_logger.info(f"VENTE EXÉCUTÉE: {asset} vendu pour ~{sold_val:.2f} USDC.")
                 if asset in state.get("positions_meta", {}):
                     del state["positions_meta"][asset]
                 assets_sold_this_cycle.append(asset)
-        else:
-            logger.debug(f"Skip vente {asset}. Conditions non remplies (Val: {val_in_usd:.2f}, Prob: {prob}, SellThr: {sell_threshold}).")
     
     if assets_sold_this_cycle: 
         save_state(state) 
-        logger.info(f"État sauvegardé après phase de VENTE. Tokens vendus: {assets_sold_this_cycle}")
+        daily_logger.info(f"État sauvegardé après phase de VENTE. Tokens vendus: {assets_sold_this_cycle}")
 
-    logger.info("Attente de 180s pour finalisation des ventes et libération USDC.")
+    daily_logger.info("Attente de 180s pour finalisation des ordres...")
     time.sleep(180)
 
+    daily_logger.info("Étape 5: Phase d'ACHAT...")
     try:
         account_info_after_sell = bexec.client.get_account()
+        balances_after_sell = account_info_after_sell.get("balances", [])
     except Exception as e:
-        logger.error(f"get_account après attente (post-vente) a échoué: {e}", exc_info=True)
+        daily_logger.error(f"get_account (post-vente) a échoué: {e}")
         return
 
-    balances_after_sell = account_info_after_sell.get("balances", [])
     new_holdings = {}
     new_USDC_balance = 0.0
     for b_as in balances_after_sell:
         asset = b_as["asset"]
-        try:
-            qty = float(b_as.get("free", 0.0)) + float(b_as.get("locked", 0.0))
-        except ValueError: continue
+        qty = float(b_as.get("free", 0.0)) + float(b_as.get("locked", 0.0))
         if asset.upper() == "USDC": new_USDC_balance = qty
         elif qty > 0: new_holdings[asset] = qty
-    logger.info(f"Après attente (post-vente) => Holdings: {new_holdings}, USDC: {new_USDC_balance:.2f}")
+    daily_logger.info(f"Solde USDC disponible pour achat: {new_USDC_balance:.2f}")
 
-    # +++ DÉBUT DE LA MODIFICATION 3 : APPLICATION DU FILTRE +++
-    # 1. Obtenir la liste des 178 tokens depuis la config pour le filtrage
     manual_tokens_for_perf = config.get("tokens_daily", [])
     if not manual_tokens_for_perf:
-        logger.warning("La liste 'tokens_daily' est vide dans config.yaml. Impossible de sélectionner les meilleurs performeurs.")
+        daily_logger.warning("Liste 'tokens_daily' vide, pas de filtrage de performance possible.")
         top_60_performers = []
     else:
-        # 2. Appeler notre nouvelle fonction pour obtenir le Top 60
         top_60_performers = select_top_performers_from_list(bexec.client, manual_tokens_for_perf, top_n=60)
-
-    # 3. Utiliser CETTE liste filtrée comme source pour les achats
+    
     buy_candidates_source_list = top_60_performers
-    # +++ FIN DE LA MODIFICATION 3 +++
+    daily_logger.info(f"Recherche de candidats à l'achat parmi {len(buy_candidates_source_list)} meilleurs performeurs.")
 
     buy_candidates = []
-    logger.info(f"Début de la recherche de candidats pour ACHAT parmi les {len(buy_candidates_source_list)} MEILLEURS PERFORMEURS.")
     for sym in buy_candidates_source_list:
         p = prob_map.get(sym, None)
-        logger.debug(f"Vérification ACHAT pour {sym}: Prob={p if p is not None else 'N/A'}")
-
-        if p is None or p < buy_threshold:
-            if p is None: logger.debug(f"SKIP ACHAT {sym}: Probabilité non trouvée.")
-            else: logger.debug(f"SKIP ACHAT {sym}: Probabilité {p:.2f} < seuil d'achat {buy_threshold:.2f}.")
-            continue
-        
+        if p is None or p < buy_threshold: continue
         current_quantity_held = new_holdings.get(sym, 0.0)
         if current_quantity_held > 0:
             price_for_value_check = bexec.get_symbol_price(sym)
             if price_for_value_check > 0:
                 value_held = price_for_value_check * current_quantity_held
                 if value_held > MAX_VALUE_TO_SKIP_BUY:
-                    logger.info(f"SKIP ACHAT {sym}: Déjà en portefeuille avec valeur {value_held:.2f} USDC (> {MAX_VALUE_TO_SKIP_BUY} USDC).")
+                    daily_logger.info(f"Candidat {sym} (Prob: {p:.2f}) ignoré car déjà en portefeuille avec valeur > {MAX_VALUE_TO_SKIP_BUY} USDC.")
                     continue
-            else:
-                logger.warning(f"Vérification ACHAT {sym}: Impossible de récupérer le prix pour la valeur détenue. Achat autorisé si prob OK.")
-        
-        logger.info(f"Candidat ACHAT: {sym} (Prob: {p:.2f})")
+        daily_logger.info(f"CANDIDAT ACHAT trouvé: {sym} (Prob: {p:.2f})")
         buy_candidates.append((sym, p))
-
+    
     buy_candidates.sort(key=lambda x: x[1], reverse=True)
     top3_buy_candidates = buy_candidates[:3]
-    logger.info(f"Top {len(top3_buy_candidates)} candidats pour ACHAT: {top3_buy_candidates}")
+    daily_logger.info(f"Top {len(top3_buy_candidates)} candidats retenus pour achat: {top3_buy_candidates}")
 
     assets_bought_this_cycle = []
     if top3_buy_candidates and new_USDC_balance > 10:
         usdc_to_allocate_total = new_USDC_balance * 0.99 
         num_buys_to_make = len(top3_buy_candidates)
-        logger.info(f"Allocation de {usdc_to_allocate_total:.2f} USDC pour {num_buys_to_make} token(s).")
-
+        daily_logger.info(f"Allocation de {usdc_to_allocate_total:.2f} USDC pour {num_buys_to_make} token(s).")
         for i, (sym, p_val) in enumerate(top3_buy_candidates, start=1):
             remaining_tokens_to_buy = num_buys_to_make - i + 1
-            if usdc_to_allocate_total < 10 or remaining_tokens_to_buy == 0 : 
-                logger.info("Reliquat USDC < 10 ou plus de tokens à acheter dans ce cycle. Arrêt des achats.")
-                break
-            
+            if usdc_to_allocate_total < 10 or remaining_tokens_to_buy == 0 : break
             usdc_per_buy = usdc_to_allocate_total / remaining_tokens_to_buy
-            if usdc_per_buy < 5: 
-                logger.info(f"Allocation par achat pour {sym} ({usdc_per_buy:.2f} USDC) trop faible. Arrêt des achats.")
-                break
-
-            logger.info(f"Tentative d'ACHAT de {sym} avec ~{usdc_per_buy:.2f} USDC (Prob: {p_val:.2f}).")
+            if usdc_per_buy < 5: break
+            daily_logger.info(f"ORDRE D'ACHAT: Tentative pour {sym} avec ~{usdc_per_buy:.2f} USDC.")
             qty_bought, price_bought, cost_of_buy = bexec.buy(sym, usdc_per_buy)
-            
             if qty_bought > 0 and cost_of_buy > 0:
-                logger.info(f"ACHAT RÉUSSI {sym}: {qty_bought:.4f} pour {cost_of_buy:.2f} USDC @ {price_bought:.4f}")
-                state.setdefault("positions_meta", {})[sym] = {
-                    "entry_px": price_bought, "did_skip_sell_once": False,
-                    "partial_sold": False, "max_price": price_bought
-                }
+                daily_logger.info(f"ACHAT EXÉCUTÉ: {qty_bought:.4f} {sym} pour {cost_of_buy:.2f} USDC @ {price_bought:.4f}")
+                state.setdefault("positions_meta", {})[sym] = {"entry_px": price_bought, "did_skip_sell_once": False, "partial_sold": False, "max_price": price_bought}
                 usdc_to_allocate_total -= cost_of_buy
                 assets_bought_this_cycle.append(sym)
             else:
-                logger.warning(f"ACHAT ÉCHOUÉ/SKIPPÉ pour {sym}. Achat non effectué ou quantité/coût nul.")
+                daily_logger.warning(f"ACHAT ÉCHOUÉ pour {sym}.")
         
         if assets_bought_this_cycle: 
             save_state(state)
-            logger.info(f"État sauvegardé après phase d'ACHAT. Tokens achetés: {assets_bought_this_cycle}")
+            daily_logger.info(f"État sauvegardé après phase d'ACHAT. Tokens achetés: {assets_bought_this_cycle}")
     else:
-        if not top3_buy_candidates: logger.info("Aucun candidat d'achat trouvé répondant aux critères.")
-        if new_USDC_balance <= 10: logger.info(f"Solde USDC ({new_USDC_balance:.2f}) insuffisant pour initier des achats.")
+        if not top3_buy_candidates: daily_logger.info("Aucun candidat d'achat ne remplissait les conditions.")
+        if new_USDC_balance <= 10: daily_logger.info("Solde USDC insuffisant pour des achats.")
 
-    logger.info("daily_update_live terminé.")
+    daily_logger.info("========== FIN DU CYCLE DAILY UPDATE LIVE ==========")
 
 
 def main():
@@ -567,7 +466,7 @@ def main():
         level=getattr(logging, str(log_config.get("level", "INFO")).upper(), logging.INFO), 
         format="%(asctime)s [%(levelname)s] %(name)s.%(funcName)s:%(lineno)d - %(message)s"
     )
-    logger.info("======================================================================") # Utiliser logger au lieu de logging
+    logger.info("======================================================================")
     logger.info(f"[MAIN] Démarrage du bot de trading MarsShot (PID: {os.getpid()}).")
     logger.info(f"[MAIN] Version Python: {sys.version.split()[0]}")
     logger.info(f"[MAIN] Répertoire du projet: {PROJECT_ROOT}")
@@ -607,7 +506,7 @@ def main():
     if "last_risk_check_ts" not in state: 
         state["last_risk_check_ts"] = 0
         logger.info("'last_risk_check_ts' initialisé dans l'état.")
-        save_state(state) # Sauvegarder l'état après l'initialisation des clés manquantes
+        save_state(state)
 
     while True:
         try:
