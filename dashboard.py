@@ -92,7 +92,7 @@ def get_model_version_date():
     # S'attendre à ce que model.pkl soit à la racine du projet, comme les autres fichiers de données
     fname = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model_deuxpointcinq.pkl") # Nom du modèle mis à jour
     
-    model_path_new = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model_deuxpointcinq.pkl")
+    model_path_new = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ensemble_mixcalib.pkl")
     model_path_old = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model.pkl")
 
     if os.path.exists(model_path_new):
