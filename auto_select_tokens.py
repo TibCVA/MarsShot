@@ -4,7 +4,7 @@
 """
 auto_select_tokens.py
 ---------------------
-Sélectionne automatiquement les N meilleurs tokens (configurable, défaut 60)
+Sélectionne automatiquement les N meilleurs tokens (configurable, défaut 171)
 basés sur leur performance, pour les paires Spot en USDC tradables sur Binance.
 Met à jour la clé 'extended_tokens_daily' dans config.yaml ET
 IMPRIME la liste des tokens sélectionnés en JSON sur stdout pour capture.
@@ -134,7 +134,7 @@ def get_kline_change(client, symbol, days=7):
 def compute_token_score(p24, p7, p30):
     return 0.8 * p7 + 0.0 * p30 + 0.2 * p24
 
-def select_top_tokens(client, top_n=60):
+def select_top_tokens(client, top_n=171):
     usdc_pairs = fetch_USDC_spot_pairs(client)
     if not usdc_pairs:
         logger.warning("[select_top_tokens] Aucune paire USDC spot trouvée. Retour d'une liste vide.")
@@ -219,10 +219,10 @@ def main():
         logger.critical(f"Erreur init client Binance: {e}. Arrêt."); print(f"JSON_OUTPUT: {json.dumps({'status': 'error', 'message': f'Init client Binance échouée: {e}', 'tokens': []})}")
         sys.stdout.flush(); sys.exit(1)
     
-    top_n_to_select = config.get("strategy", {}).get("auto_select_top_n", 60)
+    top_n_to_select = config.get("strategy", {}).get("auto_select_top_n", 171)
     if not isinstance(top_n_to_select, int) or top_n_to_select <= 0:
-        logger.warning(f"Valeur 'auto_select_top_n' invalide ({top_n_to_select}), défaut 60.")
-        top_n_to_select = 60
+        logger.warning(f"Valeur 'auto_select_top_n' invalide ({top_n_to_select}), défaut 171.")
+        top_n_to_select = 171
     logger.info(f"Sélection des {top_n_to_select} meilleurs tokens...")
     
     best_tokens_bases = select_top_tokens(client, top_n=top_n_to_select)
