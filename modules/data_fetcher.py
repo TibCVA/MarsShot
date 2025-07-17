@@ -251,8 +251,8 @@ for idx, sym in enumerate(TOKENS_DAILY, 1):
     df_feat["delta_mcap_1d"]  = df_feat["market_cap"].pct_change(1)
     df_feat["delta_mcap_3d"]  = df_feat["market_cap"].pct_change(3)
 
-    df_feat["delta_galaxy_1d"]      = df_feat["galaxy_score"].diff(1)
-    df_feat["delta_galaxy_3d"]      = df_feat["galaxy_score"].diff(3)
+    df_feat["delta_galaxy_score_1d"]      = df_feat["galaxy_score"].diff(1)
+    df_feat["delta_galaxy_score_3d"]      = df_feat["galaxy_score"].diff(3)
     df_feat["delta_social_dom_1d"]  = df_feat["social_dominance"].diff(1)
     df_feat["delta_social_dom_3d"]  = df_feat["social_dominance"].diff(3)
     df_feat["delta_market_dom_1d"]  = df_feat["market_dominance"].diff(1)
