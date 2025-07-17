@@ -11,11 +11,22 @@ import pandas as pd
 
 from modules.trade_executor import TradeExecutor
 
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(CURRENT_DIR, "config.yaml")
+# ------------------------------------------------------------------ #
+# Recherche robuste de config.yaml (patch)                           #
+# ------------------------------------------------------------------ #
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CANDIDATES = [
+    os.path.join(BASE_DIR, "config.yaml"),
+    os.path.join(BASE_DIR, "..", "config.yaml"),
+    os.path.join(BASE_DIR, "..", "..", "config.yaml"),
+]
 
-if not os.path.exists(CONFIG_FILE):
-    raise FileNotFoundError("[ERREUR] config.yaml introuvable (dashboard).")
+CONFIG_FILE = next((p for p in CANDIDATES if os.path.isfile(p)), None)
+if CONFIG_FILE is None:
+    raise FileNotFoundError(
+        "[ERREUR] config.yaml introuvable (dashboard). "
+        f"Chemins testés : {', '.join(CANDIDATES)}"
+    )
 
 with open(CONFIG_FILE, "r") as f:
     CONFIG = yaml.safe_load(f)
@@ -27,7 +38,6 @@ logging.basicConfig(level=logging.INFO)
 
 # Fichiers d'historique
 TRADE_FILE = "trade_history.json"
-# Si trade_history.json n'existe pas, on pourra tenter de lire closed_trades.csv
 CLOSED_TRADES_FILE = "closed_trades.csv"
 PERF_FILE  = "performance_history.json"
 
@@ -40,9 +50,6 @@ def get_portfolio_state():
     Retourne un dict {"positions": [...], "total_value_USDC": ...}
     représentant la liste des tokens détenus (symbol, qty, value_USDC)
     et la somme totale en USDC.
-    
-    Pour l'affichage, seuls les tokens dont la valeur est >= 1.5 USDC
-    sont inclus, à l'exception de USDC qui est toujours affiché.
     """
     bexec = TradeExecutor(BINANCE_KEY, BINANCE_SECRET)
     info  = bexec.client.get_account()
@@ -108,16 +115,6 @@ def list_tokens_tracked():
 def get_trades_history():
     """
     Retourne l'historique des trades.
-    D'abord, on tente de lire trade_history.json.
-    Si ce fichier n'existe pas, on tente de lire closed_trades.csv et on réalise un mapping
-    pour que chaque trade ait les clés attendues par le Dashboard :
-      - symbol
-      - buy_prob
-      - sell_prob
-      - days_held
-      - pnl_USDC
-      - pnl_pct
-      - status
     """
     trades = []
     if os.path.exists(TRADE_FILE):
@@ -129,17 +126,14 @@ def get_trades_history():
     elif os.path.exists(CLOSED_TRADES_FILE):
         try:
             df = pd.read_csv(CLOSED_TRADES_FILE)
-            # Si le CSV contient exit_date, créer un champ timestamp
             if "timestamp" not in df.columns and "exit_date" in df.columns:
                 df["timestamp"] = pd.to_datetime(df["exit_date"]).astype(int) // 10**9
             trades = df.to_dict(orient="records")
         except Exception as e:
             logging.error(f"[TRADES] Erreur lecture {CLOSED_TRADES_FILE}: {e}")
 
-    # Pour chaque trade, s'assurer que les clés attendues existent
     expected_keys = ["symbol", "buy_prob", "sell_prob", "days_held", "pnl_USDC", "pnl_pct", "status"]
     for trade in trades:
-        # Pour days_held, si entry_date et exit_date sont présents, on peut calculer
         if "days_held" not in trade:
             if "entry_date" in trade and "exit_date" in trade:
                 try:
@@ -150,10 +144,8 @@ def get_trades_history():
                     trade["days_held"] = "N/A"
             else:
                 trade["days_held"] = "N/A"
-        # Pour les autres clés, si elles n'existent pas, on leur affecte une valeur par défaut
         for key in ["buy_prob", "sell_prob", "pnl_USDC", "pnl_pct", "status"]:
             if key not in trade:
-                # Pour pnl_USDC et pnl_pct, on met 0 ; pour les autres, "N/A"
                 trade[key] = 0 if key in ["pnl_USDC", "pnl_pct"] else "N/A"
 
     trades.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
@@ -187,9 +179,7 @@ def record_portfolio_value(value_USDC):
 
 def get_performance_history():
     """
-    Calcule la performance sur 1d, 7d, 30d, etc. en se basant sur performance_history.json.
-    Retourne un dict du type :
-      { "1d": {"USDC": ..., "pct": ...}, "7d": {...}, "30d": {...}, "all": {...} }
+    Calcule la performance sur 1d, 7d, 30d, etc.
     """
     if not os.path.exists(PERF_FILE):
         pf = get_portfolio_state()
@@ -254,6 +244,7 @@ def emergency_out():
     bexec = TradeExecutor(BINANCE_KEY, BINANCE_SECRET)
     info = bexec.client.get_account()
     for b in info["balances"]:
+
         asset = b["asset"]
         qty = float(b["free"]) + float(b["locked"])
         if qty > 0 and asset.upper() != "USDC":
