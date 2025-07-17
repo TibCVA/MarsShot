@@ -1,8 +1,8 @@
 requests
 pandas
 numpy
-scikit-learn
-joblib
+scikit-learn==1.7.0
+joblib==1.4.2
 python-binance
 PyYAML
 ta
