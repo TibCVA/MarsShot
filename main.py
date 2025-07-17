@@ -178,7 +178,7 @@ def run_auto_select_once_per_day(state_unused):
         return None
 
 
-def select_top_performers_from_list(client, token_list, top_n=60):
+def select_top_performers_from_list(client, token_list, top_n=150):
     """
     Calcule le score de performance et renvoie les 'top_n' meilleurs.
     Inclut des pauses pour éviter les rate limits de l'API.
@@ -377,11 +377,11 @@ def daily_update_live(state, bexec):
     manual_tokens_for_perf = config.get("tokens_daily", [])
     if not manual_tokens_for_perf:
         daily_logger.warning("Liste 'tokens_daily' vide, pas de filtrage de performance possible.")
-        top_60_performers = []
+        top_150_performers = []
     else:
-        top_60_performers = select_top_performers_from_list(bexec.client, manual_tokens_for_perf, top_n=60)
+        top_150_performers = select_top_performers_from_list(bexec.client, manual_tokens_for_perf, top_n=150)
     
-    buy_candidates_source_list = top_60_performers
+    buy_candidates_source_list = top_150_performers
     daily_logger.info(f"Recherche de candidats à l'achat parmi {len(buy_candidates_source_list)} meilleurs performeurs.")
 
     buy_candidates = []
@@ -493,7 +493,7 @@ def main():
         logger.critical(f"Erreur initialisation TradeExecutor: {e}. Arrêt.", exc_info=True)
         return
         
-    DAILY_UPDATE_HOUR_UTC = config.get("strategy", {}).get("daily_update_hour_utc", 07) 
+    DAILY_UPDATE_HOUR_UTC = config.get("strategy", {}).get("daily_update_hour_utc", 00) 
     DAILY_UPDATE_MINUTE_UTC = config.get("strategy", {}).get("daily_update_minute_utc", 30) 
 
     logger.info(f"Boucle principale démarrée. Mise à jour quotidienne prévue à {DAILY_UPDATE_HOUR_UTC:02d}:{DAILY_UPDATE_MINUTE_UTC:02d} UTC.")
