@@ -277,6 +277,10 @@ for idx, sym in enumerate(TOKENS_DAILY, 1):
     merged["month"] = merged["date"].dt.month.astype("int8")
     merged["symbol"] = sym
 
+    # ---------- AJOUT PARITÉ CSV 90j ------------------------------ #
+    merged["date_dt"] = pd.to_datetime(merged["date"], utc=True)
+    # -------------------------------------------------------------- #
+
     merged.replace([np.inf, -np.inf], np.nan, inplace=True)
     dfs_tokens.append(merged)
     time.sleep(SLEEP_BETWEEN_TOKENS)
@@ -290,7 +294,7 @@ if not dfs_tokens:
     sys.exit(0)
 
 df_all = pd.concat(dfs_tokens, ignore_index=True)
-df_all.sort_values(["symbol", "date"], inplace=True)
+df_all.sort_values(["symbol", "date_dt"], inplace=True)
 df_all.reset_index(drop=True, inplace=True)
 
 df_all.to_csv(OUTPUT_CSV, index=False)
