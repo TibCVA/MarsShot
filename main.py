@@ -178,7 +178,7 @@ def run_auto_select_once_per_day(state_unused):
         return None
 
 
-def select_top_performers_from_list(client, token_list, top_n=150):
+def select_top_performers_from_list(client, token_list, top_n=171):
     """
     Calcule le score de performance et renvoie les 'top_n' meilleurs.
     Inclut des pauses pour éviter les rate limits de l'API.
@@ -377,11 +377,11 @@ def daily_update_live(state, bexec):
     manual_tokens_for_perf = config.get("tokens_daily", [])
     if not manual_tokens_for_perf:
         daily_logger.warning("Liste 'tokens_daily' vide, pas de filtrage de performance possible.")
-        top_150_performers = []
+        top_171_performers = []
     else:
-        top_150_performers = select_top_performers_from_list(bexec.client, manual_tokens_for_perf, top_n=150)
+        top_171_performers = select_top_performers_from_list(bexec.client, manual_tokens_for_perf, top_n=171)
     
-    buy_candidates_source_list = top_150_performers
+    buy_candidates_source_list = top_171_performers
     daily_logger.info(f"Recherche de candidats à l'achat parmi {len(buy_candidates_source_list)} meilleurs performeurs.")
 
     buy_candidates = []
