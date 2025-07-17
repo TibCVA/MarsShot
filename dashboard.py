@@ -23,8 +23,8 @@ try:
         get_trades_history,
         emergency_out
     )
-except ImportError as e:
-    # Log plus explicite si dashboard_data n'est pas trouvé
+# ---------- P1 : capte tout type d'exception pour éviter erreur 500 ----------
+except Exception as e:
     logging.error(f"[DASHBOARD] Erreur critique: Impossible d'importer dashboard_data: {e}. Assurez-vous que dashboard_data.py est dans le PYTHONPATH ou le même répertoire.")
     # Fournir des fonctions factices pour que le dashboard puisse démarrer mais afficher des erreurs
     def get_portfolio_state(): return {"positions": [], "total_value_USDC": "Erreur: dashboard_data"}
@@ -38,7 +38,8 @@ try:
     from main import daily_update_live as main_daily_update_live # Renommer pour clarté
     from main import load_state # save_state n'est pas directement appelé par le dashboard ici
     from modules.trade_executor import TradeExecutor
-except ImportError as e:
+# ---------- P2 : même élargissement ici ----------
+except Exception as e:
     logging.error(f"[DASHBOARD] Erreur lors de l'import des modules de main.py ou TradeExecutor pour force_daily_update: {e}")
     # Définir une fonction factice pour main_daily_update_live si l'import échoue
     def main_daily_update_live(state, bexec):
@@ -285,13 +286,13 @@ function refreshGeneralLogs(){
   fetch("{{ url_for('get_general_logs', pwd=secret_pwd) }}")
    .then(response => response.text())
    .then(text => { document.getElementById("generalLogsContent").innerText = text; })
-   .catch(error => { document.getElementById("generalLogsContent").innerText = "Erreur chargement logs.\\n" + error; });
+   .catch(error => { document.getElementById("generalLogsContent").innerText = "Erreur chargement logs.\n" + error; });
 }
 function refreshDailyLogs(){
   fetch("{{ url_for('get_daily_update_logs', pwd=secret_pwd) }}")
    .then(response => response.text())
    .then(text => { document.getElementById("dailyLogsContent").innerText = text; })
-   .catch(error => { document.getElementById("dailyLogsContent").innerText = "Erreur chargement logs.\\n" + error; });
+   .catch(error => { document.getElementById("dailyLogsContent").innerText = "Erreur chargement logs.\n" + error; });
 }
 document.addEventListener('DOMContentLoaded', function() {
     refreshGeneralLogs();
