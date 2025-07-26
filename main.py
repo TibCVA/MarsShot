@@ -8,7 +8,7 @@ import yaml
 import os
 import pytz
 import subprocess
-import json # Pour parser la sortie JSON de auto_select_tokens
+import json  # Pour parser la sortie JSON de auto_select_tokens
 import sys
 
 from modules.trade_executor import TradeExecutor
@@ -54,7 +54,7 @@ def setup_daily_logger():
     
     daily_logger.addHandler(file_handler)
     daily_logger.setLevel(logging.INFO)
-    daily_logger.propagate = False # Empêche les logs de remonter au logger racine
+    daily_logger.propagate = False  # Empêche les logs de remonter au logger racine
 
 def load_probabilities_csv(csv_path=DAILY_PROBABILITIES_CSV_PATH):
     import pandas as pd
@@ -289,7 +289,16 @@ def daily_update_live(state, bexec):
         
     prob_map = load_probabilities_csv() 
     daily_logger.info(f"{len(prob_map)} probabilités chargées.")
-    
+
+    # === AJOUT : LOG DÉTAILLÉ DES PROBABILITÉS PAR TOKEN ===========
+    for sym, p in sorted(prob_map.items(), key=lambda x: (-x[1], x[0])):
+        try:
+            daily_logger.info(f"[PROB] {sym}: {p:.4f}")
+        except Exception:
+            # Sécurise le log au cas où p ne serait pas un float valide
+            daily_logger.info(f"[PROB] {sym}: {p}")
+    # ===============================================================
+
     daily_logger.info("Étape 4: Phase de VENTE...")
     try:
         account_info = bexec.client.get_account()
