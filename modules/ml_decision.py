@@ -134,6 +134,16 @@ def main():
         for c in missing_cols:
             df[c] = np.nan
 
+    # -------------------- Filtrage « lignes complètes » ----------- #
+    rows_before = len(df)
+    df = df.dropna(subset=FEATURES)           # <-- PATCH parité back‑test
+    rows_after = len(df)
+    log.info("[FILTER] %d lignes écartées pour NaN ; %d restantes.",
+             rows_before - rows_after, rows_after)
+    if df.empty:
+        log.warning("Aucune ligne complète après filtrage – fin.")
+        sys.exit(0)
+
     # -------------------- Préparation X --------------------------- #
     X = df[FEATURES].astype(float)
 
