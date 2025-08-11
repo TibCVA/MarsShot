@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-data_fetcher.py  – LIVE   (compatible modèle v9 : ensemble_mixcalib.pkl)
+data_fetcher.py  – LIVE   (compatible modèle v9 : ensemble_mixcalib.pkl)
 
 • Construit daily_inference_data.csv contenant **toutes** les colonnes
   attendues par le modèle entraîné.
 • Zéro changement d’interface : les chemins, les clés yaml, les logs
   demeurent identiques aux scripts précédents.
 • Concordance stricte avec build_csv_v4_final_tuning.py   (training)
-  et backtest_data_builder_90d.py (back‑test).
+  et backtest_data_builder_90d.py (back-test).
 """
 
 # ------------------------------------------------------------------ #
@@ -51,7 +51,7 @@ log.info("=== START data_fetcher.py – build daily_inference_data.csv ===")
 # ------------------------------------------------------------------ #
 # Arguments & configuration                                          #
 # ------------------------------------------------------------------ #
-parser = argparse.ArgumentParser("Data Fetcher for live inference (model v9)")
+parser = argparse.ArgumentParser("Data Fetcher for live inference (model v9)")
 parser.add_argument("--config", default="", help="Path to config YAML")
 args = parser.parse_args()
 
@@ -83,7 +83,7 @@ MAX_RETRY            = 3
 TIMEOUT_S            = 25
 
 # ------------------------------------------------------------------ #
-# Binance client (simple sanity‑check de prix)                       #
+# Binance client (simple sanity-check de prix)                       #
 # ------------------------------------------------------------------ #
 binance_client = BinanceClient(BINANCE_KEY, BINANCE_SEC)
 
@@ -108,7 +108,7 @@ def calculate_slope(s: pd.Series, window: int = 5) -> pd.Series:
 LUNAR_URL = "https://lunarcrush.com/api4/public/coins/{sym}/time-series/v2"
 
 def fetch_lunar(sym: str, days: int = 365) -> Optional[pd.DataFrame]:
-    """Récupération daily UTC 0h → 0h, max <days> jours, NaN conservés."""
+    """Récupération daily UTC 0h → 0h, max <days> jours, NaN conservés."""
     if not LUNAR_API_KEY:
         return None
     end = datetime.now(timezone.utc).replace(hour=0, minute=0,
@@ -147,20 +147,46 @@ def fetch_lunar(sym: str, days: int = 365) -> Optional[pd.DataFrame]:
             time.sleep(8 * attempt)
     return None
 
-def verify_price(sym: str, lunar_last_close: float, tolerance: float = .2) -> bool:
-    """Compare close LunarCrush (USD) vs Binance‑USDC spot (±tolerance)."""
+# ----------------------- PRIX Binance vs LunarCrush ---------------- #
+def _binance_yesterday_close_usdc(sym: str):
+    """
+    Retourne la clôture DAILY J-1 sur Binance (paire USDC) pour comparer
+    à la dernière clôture J-1 LunarCrush. On prend la bougie -2 pour
+    éviter la bougie du jour en cours si elle est incluse.
+    """
+    pair = f"{sym.upper()}USDC"
     try:
-        ticker = binance_client.get_symbol_ticker(symbol=f"{sym.upper()}USDC")
-        px_binance = float(ticker.get("price", 0))
-    except (BinanceAPIException, BinanceRequestException, ValueError):
+        kl = binance_client.get_klines(
+            symbol=pair,
+            interval=BinanceClient.KLINE_INTERVAL_1DAY,
+            limit=2
+        )
+        if not kl:
+            return None
+        idx = -2 if len(kl) >= 2 else -1  # dernière bougie *fermée*
+        return float(kl[idx][4])           # close
+    except Exception:
+        return None
+
+def verify_price(sym: str, lunar_last_close: float, tolerance: float = .2) -> bool:
+    """
+    Compare la *dernière clôture J-1* LunarCrush à la *clôture DAILY J-1*
+    Binance (paire USDC). Évite de rejeter à tort lors des périodes volatiles.
+    """
+    try:
+        if not np.isfinite(lunar_last_close) or lunar_last_close <= 0:
+            return False
+    except Exception:
         return False
-    if px_binance == 0:
+
+    y_close = _binance_yesterday_close_usdc(sym)
+    if not y_close or y_close <= 0:
         return False
-    return abs(px_binance - lunar_last_close) / px_binance <= tolerance
+    return abs(y_close - lunar_last_close) / y_close <= tolerance
 
 # ------------------------------ Benchmarks BTC / ETH --------------- #
 def prep_bench(df: pd.DataFrame, pfx: str) -> pd.DataFrame:
-    """Reproduit bench_feats() de build_csv.py + compléments back‑test."""
+    """Reproduit bench_feats() de build_csv.py + compléments back-test."""
     df = df.copy()
     num_cols = ["open", "high", "low", "close", "volume"]
     df[num_cols] = df[num_cols].apply(pd.to_numeric, errors="coerce")
@@ -211,7 +237,7 @@ for idx, sym in enumerate(TOKENS_DAILY, 1):
     # --- Validation prix vs Binance (optionnelle mais prudente) ----
     last_close = pd.to_numeric(raw["close"], errors="coerce").dropna().iloc[-1]
     if not verify_price(sym, last_close):
-        log.warning("[%s] écart prix Binance > 20 %% – skip", sym)
+        log.warning("[%s] écart prix Binance > 20 %% – skip", sym)
         continue
 
     # -------------------------------------------------------------- #
