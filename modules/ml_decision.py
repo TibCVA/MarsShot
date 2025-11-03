@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ml_decision.py – LIVE inference pour ensemble_mixcalib.pkl (modèle v9)
+ml_decision.py –  LIVE inference pour ensemble_mixcalib.pkl (modèle v9)
 
 • Lit daily_inference_data.csv produit par data_fetcher.py
 • Récupère **dynamiquement** la liste des features depuis le booster
-  LightGBM (pas de liste codée en dur → zéro décalage possible)
+  LightGBM (pas de liste codée en dur → zéro décalage possible)
 • Calcule la proba moyenne (sigmoid + isotonic) / 2, moyennée sur l’ensemble
 • Écrit daily_probabilities.csv   (colonnes : symbol, prob)
 """
@@ -118,7 +118,7 @@ def main():
     date_col = "date_dt" if "date_dt" in df.columns else "date"
     df["date_dt"] = pd.to_datetime(df[date_col], utc=True, errors="coerce")
 
-    # On ne prédit que sur la dernière bougie *fermée* (J‑1)
+    # On ne prédit que sur la dernière bougie *fermée* (J‑1)
     today_utc = datetime.now(timezone.utc).date()
     df = df[df["date_dt"].dt.date < today_utc]
 
@@ -129,12 +129,12 @@ def main():
     # Ajout éventuel des features manquantes (remplies NaN)
     missing_cols = [c for c in FEATURES if c not in df.columns]
     if missing_cols:
-        log.warning("Ajout %d features manquantes remplies NaN : %s",
+        log.warning("Ajout %d features manquantes remplies NaN : %s",
                     len(missing_cols), missing_cols)
         for c in missing_cols:
             df[c] = np.nan
 
-    # -------------------- Filtrage « lignes complètes » ----------- #
+    # -------------------- Filtrage « lignes complètes » ----------- #
     rows_before = len(df)
     df = df.dropna(subset=FEATURES)           # <-- PATCH parité back‑test
     rows_after = len(df)
