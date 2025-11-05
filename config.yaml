@@ -358,8 +358,8 @@ strategy:
   trailing_pct: 0.20
   big_gain_exception_pct: 3.0
   check_interval_seconds: 300
-  daily_update_hour_utc: 00
-  daily_update_minute_utc: 30
+  daily_update_hour_utc: 2
+  daily_update_minute_utc: 0
 
 logging:
   file: "bot.log"
