@@ -9,6 +9,12 @@ data_fetcher.py  – LIVE   (compatible modèle v9 : ensemble_mixcalib.pkl)
   demeurent identiques aux scripts précédents.
 • Concordance stricte avec build_csv_v4_final_tuning.py   (training)
   et backtest_data_builder_90d.py (back-test).
+
+Patches de parité (backtest) intégrés SANS casser le reste :
+- Borne LunarCrush : fin à J-1 23:59:59.999999 UTC (au lieu de today 00:00).
+- Benchmarks BTC/ETH : 0→NaN puis ffill().bfill() avant calculs (comme backtest).
+- Token-level : suppression du remplissage volume NaN -> 0 (on laisse les NaN).
+- Vérification Binance/USDC (verify_price) conservée telle quelle.
 """
 
 # ------------------------------------------------------------------ #
@@ -108,14 +114,19 @@ def calculate_slope(s: pd.Series, window: int = 5) -> pd.Series:
 LUNAR_URL = "https://lunarcrush.com/api4/public/coins/{sym}/time-series/v2"
 
 def fetch_lunar(sym: str, days: int = 365) -> Optional[pd.DataFrame]:
-    """Récupération daily UTC 0h → 0h, max <days> jours, NaN conservés."""
+    """
+    Récupération daily UTC (bucket 'day'), max <days> jours, NaN conservés.
+    Parité backtest : borne de fin = J-1 23:59:59.999999 UTC.
+    """
     if not LUNAR_API_KEY:
         return None
     end = datetime.now(timezone.utc).replace(hour=0, minute=0,
                                              second=0, microsecond=0)
-    start = end - timedelta(days=days - 1)
+    # backtest: end_yest = today 00:00 - 1 microseconde
+    end_yest = end - timedelta(microseconds=1)
+    start = end_yest - timedelta(days=days - 1)
     params = dict(key=LUNAR_API_KEY, bucket="day",
-                  start=int(start.timestamp()), end=int(end.timestamp()))
+                  start=int(start.timestamp()), end=int(end_yest.timestamp()))
     for attempt in range(1, MAX_RETRY + 1):
         try:
             r = requests.get(LUNAR_URL.format(sym=sym), params=params,
@@ -186,16 +197,23 @@ def verify_price(sym: str, lunar_last_close: float, tolerance: float = .2) -> bo
 
 # ------------------------------ Benchmarks BTC / ETH --------------- #
 def prep_bench(df: pd.DataFrame, pfx: str) -> pd.DataFrame:
-    """Reproduit bench_feats() de build_csv.py + compléments back-test."""
+    """
+    Parité backtest: 0→NaN puis ffill/bfill avant calculs.
+    Colonnes générées : {pfx}_close, {pfx}_daily_change, {pfx}_3d_change,
+    {pfx}_volume_norm_ma20, {pfx}_atr_norm, {pfx}_rsi, {pfx}_price_std_7d,
+    {pfx}_price_std_30d (std/close).
+    """
     df = df.copy()
     num_cols = ["open", "high", "low", "close", "volume"]
     df[num_cols] = df[num_cols].apply(pd.to_numeric, errors="coerce")
+    df = df.replace(0, np.nan).ffill().bfill()
+
     out = pd.DataFrame({
         "date": df["date"],
-        f"{pfx}_close"         : df["close"],
-        f"{pfx}_daily_change"  : df["close"].pct_change(1),
-        f"{pfx}_3d_change"     : df["close"].pct_change(3),
-        f"{pfx}_volume_norm_ma20": df["volume"] / df["volume"].rolling(20).mean()
+        f"{pfx}_close"            : df["close"],
+        f"{pfx}_daily_change"     : df["close"].pct_change(1),
+        f"{pfx}_3d_change"        : df["close"].pct_change(3),
+        f"{pfx}_volume_norm_ma20" : df["volume"] / df["volume"].rolling(20).mean()
     })
     atr = ta.volatility.AverageTrueRange(high=df["high"], low=df["low"],
                                          close=df["close"], window=14) \
@@ -234,7 +252,7 @@ for idx, sym in enumerate(TOKENS_DAILY, 1):
         log.warning("[%s] données insuffisantes – skip", sym)
         continue
 
-    # --- Validation prix vs Binance (optionnelle mais prudente) ----
+    # --- Validation prix vs Binance (conservée) --------------------
     last_close = pd.to_numeric(raw["close"], errors="coerce").dropna().iloc[-1]
     if not verify_price(sym, last_close):
         log.warning("[%s] écart prix Binance > 20 %% – skip", sym)
@@ -244,9 +262,9 @@ for idx, sym in enumerate(TOKENS_DAILY, 1):
     # Préparation & indicateurs techniques identiques au training    #
     # -------------------------------------------------------------- #
     df = raw.copy()
-    df[numeric_base_cols] = df[numeric_base_cols] \
-        .apply(pd.to_numeric, errors="coerce")
-    df["volume"].fillna(0.0, inplace=True)
+    df[numeric_base_cols] = df[numeric_base_cols].apply(pd.to_numeric, errors="coerce")
+    # Parité backtest : NE PAS forcer volume NaN -> 0
+    # df["volume"].fillna(0.0, inplace=True)  # (supprimé)
 
     df_feat = compute_indicators_extended(df)
     df_feat.set_index("date", inplace=True)
@@ -303,7 +321,7 @@ for idx, sym in enumerate(TOKENS_DAILY, 1):
     merged["month"] = merged["date"].dt.month.astype("int8")
     merged["symbol"] = sym
 
-    # ---------- AJOUT PARITÉ CSV 90j ------------------------------ #
+    # ---------- Ajout parité CSV (alignement backtest) ------------ #
     merged["date_dt"] = pd.to_datetime(merged["date"], utc=True)
     # -------------------------------------------------------------- #
 
