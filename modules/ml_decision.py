@@ -106,7 +106,6 @@ def main():
     except Exception as exc:
         log.critical("Extraction features impossible : %s", exc, exc_info=True)
         sys.exit(1)
-    feat_set = set(FEATURES)
 
     # -------------------- Lecture CSV ----------------------------- #
     df = pd.read_csv(INPUT_CSV)
@@ -134,18 +133,9 @@ def main():
         for c in missing_cols:
             df[c] = np.nan
 
-    # -------------------- Filtrage « lignes complètes » ----------- #
-    rows_before = len(df)
-    df = df.dropna(subset=FEATURES)           # <-- PATCH parité back‑test
-    rows_after = len(df)
-    log.info("[FILTER] %d lignes écartées pour NaN ; %d restantes.",
-             rows_before - rows_after, rows_after)
-    if df.empty:
-        log.warning("Aucune ligne complète après filtrage – fin.")
-        sys.exit(0)
-
     # -------------------- Préparation X --------------------------- #
-    X = df[FEATURES].astype(float)
+    # Parité backtest : pas de dropna(subset=FEATURES), LightGBM gère les NaN
+    X = df[FEATURES].astype(np.float32)
 
     # -------------------- Prédiction ------------------------------ #
     predict_fn = load_ensemble(MODEL_FILE)
